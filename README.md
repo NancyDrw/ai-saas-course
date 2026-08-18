@@ -1,4 +1,1 @@
-# ai-saas-course
-# ai-saas-course
-# ai-saas-course
-# ai-saas-course
+Додаток для відслідковування психологічного стану людини.
