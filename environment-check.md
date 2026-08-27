@@ -20,7 +20,7 @@
 # Tunnel
 
 - Запущено Cloudflare Quick Tunnel для `http://localhost:8080`.
-- Публічне посилання: https://dem-explicitly-pas-italia.trycloudflare.com
+- Публічне посилання: https://finances-destinations-month-worldwide.trycloudflare.com
 - Публічне посилання перевірено: повертає `HTTP 200 OK`.
 - Quick Tunnel є тимчасовим і працює, поки активний процес `cloudflared`.
 
