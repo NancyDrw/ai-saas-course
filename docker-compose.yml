@@ -3,6 +3,8 @@ services:
     build: .
     env_file:
       - .env
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
     volumes:
       - ./app:/app/app
     command: watchfiles --filter python "python app/main.py" app
