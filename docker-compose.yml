@@ -1,0 +1,8 @@
+services:
+  bot:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+    command: watchfiles --filter python "python app/main.py" app
