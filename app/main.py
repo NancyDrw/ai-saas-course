@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from pathlib import Path
 
@@ -8,6 +9,12 @@ from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 MENU_TEXTS = {
     "💬 AI-сексолог": "Допоможе структурувати запит і підібрати запитання для саморефлексії.",
@@ -40,6 +47,7 @@ async def main() -> None:
 
     @dp.message(CommandStart())
     async def cmd_start(message: Message) -> None:
+        logger.info("Command /start received: user_id=%s", message.from_user.id)
         await message.answer(
             "Привіт! 👋\n\n"
             "Я Intima — цифровий помічник для турботи про близькість і стосунки.\n"
@@ -49,6 +57,7 @@ async def main() -> None:
 
     @dp.message(Command("help"))
     async def cmd_help(message: Message) -> None:
+        logger.info("Command /help received: user_id=%s", message.from_user.id)
         await message.answer(
             "Intima допомагає дбайливо говорити про близькість у стосунках.\n\n"
             "Доступні команди:\n"
@@ -60,10 +69,16 @@ async def main() -> None:
 
     @dp.message(Command("menu"))
     async def cmd_menu(message: Message) -> None:
+        logger.info("Command /menu received: user_id=%s", message.from_user.id)
         await message.answer("Обери розділ:", reply_markup=menu_keyboard)
 
     @dp.message(F.text.in_(MENU_TEXTS))
     async def menu_item_selected(message: Message) -> None:
+        logger.info(
+            "Menu section selected: user_id=%s section=%s",
+            message.from_user.id,
+            message.text,
+        )
         await message.answer(
             f"{MENU_TEXTS[message.text]}\n\n"
             "Цей розділ поки в розробці — інтерактивний сценарій з’явиться незабаром."
