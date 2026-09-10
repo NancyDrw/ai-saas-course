@@ -7,6 +7,11 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
 from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup
 from dotenv import load_dotenv
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from database import Base, Couple, User, create_database_engine
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -42,6 +47,15 @@ async def main() -> None:
     if not token:
         raise RuntimeError("BOT_TOKEN is not set. Copy .env.example to .env and fill in the token.")
 
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url or database_url == "your_database_url_here":
+        raise RuntimeError("DATABASE_URL is not set. Add it to the local .env file.")
+
+    engine = create_database_engine(database_url)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
     bot = Bot(token=token)
     dp = Dispatcher()
 
@@ -63,7 +77,8 @@ async def main() -> None:
             "Доступні команди:\n"
             "/start — розпочати роботу\n"
             "/help — коротка довідка\n"
-            "/menu — показати меню",
+            "/menu — показати меню\n"
+            "/couple Анна та Максим — зберегти пару",
             reply_markup=menu_keyboard,
         )
 
@@ -71,6 +86,47 @@ async def main() -> None:
     async def cmd_menu(message: Message) -> None:
         logger.info("Command /menu received: user_id=%s", message.from_user.id)
         await message.answer("Обери розділ:", reply_markup=menu_keyboard)
+
+    @dp.message(Command("couple"))
+    async def cmd_couple(message: Message) -> None:
+        command, separator, title = (message.text or "").partition(" ")
+        couple_title = title.strip()
+        if not separator or not couple_title:
+            await message.answer("Використайте формат: /couple Анна та Максим")
+            return
+
+        telegram_user = message.from_user
+        if telegram_user is None:
+            await message.answer("Не вдалося визначити користувача Telegram.")
+            return
+
+        try:
+            async with session_factory() as session:
+                user = await session.scalar(
+                    select(User).where(User.telegram_id == telegram_user.id)
+                )
+                if user is None:
+                    user = User(
+                        telegram_id=telegram_user.id,
+                        username=telegram_user.username,
+                        first_name=telegram_user.first_name,
+                    )
+                    session.add(user)
+                    await session.flush()
+
+                couple = Couple(created_by_user_id=user.id, title=couple_title)
+                session.add(couple)
+                await session.commit()
+                await session.refresh(couple)
+        except SQLAlchemyError:
+            logger.error("Could not save couple for Telegram user %s", telegram_user.id)
+            await message.answer("Не вдалося зберегти пару. Спробуйте ще раз пізніше.")
+            return
+
+        logger.info("Couple created: couple_id=%s user_id=%s", couple.id, telegram_user.id)
+        await message.answer(
+            f"Пару «{couple_title}» збережено. Унікальний ID: {couple.id}"
+        )
 
     @dp.message(F.text.in_(MENU_TEXTS))
     async def menu_item_selected(message: Message) -> None:
@@ -84,7 +140,10 @@ async def main() -> None:
             "Цей розділ поки в розробці — інтерактивний сценарій з’явиться незабаром."
         )
 
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await engine.dispose()
 
 
 if __name__ == "__main__":
