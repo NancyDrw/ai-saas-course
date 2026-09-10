@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from database import Base, Couple, User, create_database_engine
+from database import Base, Category, Couple, User, UserTransaction, create_database_engine
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -30,6 +30,9 @@ MENU_TEXTS = {
     "🧩 Вправи для пари": "Запропонує практики для комунікації та близькості.",
     "📊 Insights": "Показуватиме динаміку та теми, яким варто приділити більше уваги.",
 }
+
+COUPLE_PROFILE_CATEGORY_CODE = "couple_profile"
+COUPLE_PROFILE_CATEGORY_TITLE = "Профіль пари"
 
 menu_keyboard = ReplyKeyboardMarkup(
     keyboard=[
@@ -55,6 +58,20 @@ async def main() -> None:
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with session_factory() as session:
+        category = await session.scalar(
+            select(Category).where(Category.code == COUPLE_PROFILE_CATEGORY_CODE)
+        )
+        if category is None:
+            session.add(
+                Category(
+                    code=COUPLE_PROFILE_CATEGORY_CODE,
+                    title=COUPLE_PROFILE_CATEGORY_TITLE,
+                    description="Створення та ведення профілю пари.",
+                )
+            )
+            await session.commit()
 
     bot = Bot(token=token)
     dp = Dispatcher()
@@ -89,7 +106,7 @@ async def main() -> None:
 
     @dp.message(Command("couple"))
     async def cmd_couple(message: Message) -> None:
-        command, separator, title = (message.text or "").partition(" ")
+        _, separator, title = (message.text or "").partition(" ")
         couple_title = title.strip()
         if not separator or not couple_title:
             await message.answer("Використайте формат: /couple Анна та Максим")
@@ -114,11 +131,30 @@ async def main() -> None:
                     session.add(user)
                     await session.flush()
 
+                category = await session.scalar(
+                    select(Category).where(
+                        Category.code == COUPLE_PROFILE_CATEGORY_CODE
+                    )
+                )
+                if category is None:
+                    raise RuntimeError("The couple profile category is missing.")
+
                 couple = Couple(created_by_user_id=user.id, title=couple_title)
                 session.add(couple)
+                await session.flush()
+                session.add(
+                    UserTransaction(
+                        user_id=user.id,
+                        category_id=category.id,
+                        couple_id=couple.id,
+                        action_type="couple_created",
+                        selected_profile="couple",
+                        content_summary="Створено профіль пари.",
+                    )
+                )
                 await session.commit()
                 await session.refresh(couple)
-        except SQLAlchemyError:
+        except (RuntimeError, SQLAlchemyError):
             logger.error("Could not save couple for Telegram user %s", telegram_user.id)
             await message.answer("Не вдалося зберегти пару. Спробуйте ще раз пізніше.")
             return

@@ -16,3 +16,13 @@ services:
     volumes:
       - ./app:/app/app
     command: python app/check_connection_to_db.py
+
+  api:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+    ports:
+      - "8000:8000"
+    command: uvicorn app.api:app --host 0.0.0.0 --port 8000 --reload

@@ -1,8 +1,8 @@
-"""SQLAlchemy models and connection helpers for the Intima bot."""
+"""Async SQLAlchemy models and Neon connection helpers."""
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -24,6 +24,17 @@ class User(Base):
     )
 
 
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    code: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
 class Couple(Base):
     __tablename__ = "couples"
 
@@ -39,6 +50,24 @@ class Couple(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+
+class UserTransaction(Base):
+    """A safe activity event, not a financial transaction."""
+
+    __tablename__ = "user_transactions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("categories.id"), nullable=False
+    )
+    couple_id: Mapped[int | None] = mapped_column(ForeignKey("couples.id"))
+    action_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    selected_profile: Mapped[str | None] = mapped_column(String(50))
+    content_summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 def create_database_engine(database_url: str) -> AsyncEngine:
     """Create an async PostgreSQL engine with asyncpg for Neon."""
