@@ -54,7 +54,7 @@ export default function App() {
 
   const cards = [
     { label: "Користувачі", value: summary?.total_users ?? 0, icon: "👤" },
-    { label: "Створені пари", value: summary?.total_couples ?? 0, icon: "🤝" },
+    { label: "Створені пари", value: summary?.total_couples ?? 0, icon: "👩‍❤️‍👨" },
     { label: "Дії у боті", value: summary?.total_activities ?? 0, icon: "✨" },
   ];
 
