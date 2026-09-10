@@ -44,6 +44,34 @@ python app/main.py
 
 4. У Telegram відкрийте бота й надішліть `/start`. Має прийти коротке привітання.
 
+## Admin API
+
+Запустіть read-only API для майбутньої web-адмінки:
+
+```bash
+docker compose up api
+```
+
+FastAPI Docs доступні за адресою `http://localhost:8000/docs`.
+
+- `GET /api/transactions` повертає безпечну історію дій користувачів.
+- `GET /api/summary` повертає кількість користувачів, створених пар і дій.
+
+API читає `DATABASE_URL` лише на backend. Frontend ніколи не отримує рядок підключення до Neon.
+
+## React admin dashboard
+
+В окремому терміналі запустіть FastAPI, а потім React-адмінку:
+
+```bash
+docker compose up api
+cd admin
+npm install
+npm run dev
+```
+
+Відкрийте адресу, яку покаже Vite (зазвичай `http://localhost:5173`). Адмінка отримує дані лише через `/api/transactions` і `/api/summary`; Vite передає ці запити на FastAPI локально.
+
 ## Debug / Troubleshooting
 
 Типові проблеми запуску бота, Docker Compose та Git описані у [DEBUG.md](DEBUG.md). Перед тим як ділитися логами, переконайтеся, що вони не містять токенів або інших секретів.
