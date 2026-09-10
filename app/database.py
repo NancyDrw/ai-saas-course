@@ -35,7 +35,6 @@ class Category(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-
 class Couple(Base):
     __tablename__ = "couples"
 
@@ -69,7 +68,6 @@ class UserTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-
 
 def create_database_engine(database_url: str) -> AsyncEngine:
     """Create an async PostgreSQL engine with asyncpg for Neon."""

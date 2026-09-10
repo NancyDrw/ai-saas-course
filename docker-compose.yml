@@ -9,6 +9,14 @@ services:
       - ./app:/app/app
     command: watchfiles --filter python "python app/main.py" app
 
+  db-check:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+    command: python app/check_connection_to_db.py
+
   api:
     build: .
     env_file:
