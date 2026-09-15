@@ -1,25 +1,21 @@
-"""Read-only API for the Intima admin dashboard."""
+"""API for the Intima credits admin dashboard."""
 
 import os
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI
-from pydantic import BaseModel
-from sqlalchemy import func, select
+from fastapi import Depends, FastAPI, Header, HTTPException, status
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from .database import (
-    Base,
-    Category,
-    Couple,
-    User,
-    UserTransaction,
-    create_database_engine,
-)
+from .database import Base, CreditTransaction, create_database_engine
 
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -34,17 +30,44 @@ session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
 class TransactionResponse(BaseModel):
     id: int
-    date: datetime
-    type: str
+    date: date
+    type: Literal["income", "expense"]
+    amount: Decimal
     category: str
     description: str | None
-    couple_id: int | None
+
+
+class TransactionCreate(BaseModel):
+    type: Literal["income", "expense"]
+    amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    category: str = Field(min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=1000)
+    date: date
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, value: str) -> str:
+        category = value.strip()
+        if not category:
+            raise ValueError("Category must not be empty.")
+        return category
+
+    @field_validator("description")
+    @classmethod
+    def normalize_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
 
 
 class SummaryResponse(BaseModel):
-    total_users: int
-    total_couples: int
-    total_activities: int
+    total_income: Decimal
+    total_expense: Decimal
+    balance: Decimal
+
+
+class AdminAccessResponse(BaseModel):
+    authorized: bool
 
 
 @asynccontextmanager
@@ -57,8 +80,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="Intima Admin API",
-    description="Read-only API for dashboard activity metrics.",
-    version="0.1.0",
+    description="Admin API for the Intima credits ledger.",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -68,43 +91,112 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         yield session
 
 
+async def require_admin(
+    password: str | None = Header(default=None, alias="X-Admin-Password"),
+) -> None:
+    """Provide minimal local protection for the learning admin dashboard."""
+    expected_password = os.getenv("ADMIN_PASSWORD")
+    if not expected_password:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ADMIN_PASSWORD is not configured on the server.",
+        )
+    if password is None or not secrets.compare_digest(password, expected_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid admin password.",
+        )
+
+
+@app.post("/api/admin/access", response_model=AdminAccessResponse)
+async def verify_admin_access(_: None = Depends(require_admin)) -> AdminAccessResponse:
+    """Validate the password before loading the admin dashboard."""
+    return AdminAccessResponse(authorized=True)
+
+
+def serialize_transaction(transaction: CreditTransaction) -> TransactionResponse:
+    return TransactionResponse(
+        id=transaction.id,
+        date=transaction.occurred_on,
+        type=transaction.transaction_type,
+        amount=transaction.amount,
+        category=transaction.category,
+        description=transaction.description,
+    )
+
+
 @app.get("/api/transactions", response_model=list[TransactionResponse])
 async def list_transactions(
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_admin),
 ) -> list[TransactionResponse]:
-    """Return safe activity metadata for the admin dashboard."""
+    """Return Intima credit ledger entries, newest first."""
     result = await session.execute(
-        select(UserTransaction, Category.title)
-        .join(Category, UserTransaction.category_id == Category.id)
-        .order_by(UserTransaction.created_at.desc())
-    )
-
-    return [
-        TransactionResponse(
-            id=transaction.id,
-            date=transaction.created_at,
-            type=transaction.action_type,
-            category=category_title,
-            description=transaction.content_summary,
-            couple_id=transaction.couple_id,
+        select(CreditTransaction).order_by(
+            CreditTransaction.occurred_on.desc(), CreditTransaction.id.desc()
         )
-        for transaction, category_title in result.all()
-    ]
+    )
+    return [serialize_transaction(transaction) for transaction in result.scalars()]
+
+
+@app.post(
+    "/api/transactions",
+    response_model=TransactionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_transaction(
+    payload: TransactionCreate,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_admin),
+) -> TransactionResponse:
+    """Create a validated credit income or expense entry."""
+    transaction = CreditTransaction(
+        transaction_type=payload.type,
+        amount=payload.amount,
+        category=payload.category,
+        description=payload.description,
+        occurred_on=payload.date,
+    )
+    session.add(transaction)
+    await session.commit()
+    await session.refresh(transaction)
+    return serialize_transaction(transaction)
+
+
+@app.delete("/api/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_transaction(
+    transaction_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_admin),
+) -> None:
+    """Remove one credit ledger entry."""
+    transaction = await session.get(CreditTransaction, transaction_id)
+    if transaction is None:
+        raise HTTPException(status_code=404, detail="Transaction not found.")
+
+    await session.delete(transaction)
+    await session.commit()
 
 
 @app.get("/api/summary", response_model=SummaryResponse)
 async def get_summary(
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_admin),
 ) -> SummaryResponse:
-    """Return dashboard counts: users, created couples and activity events."""
-    total_users = await session.scalar(select(func.count()).select_from(User))
-    total_couples = await session.scalar(select(func.count()).select_from(Couple))
-    total_activities = await session.scalar(
-        select(func.count()).select_from(UserTransaction)
+    """Return credit income, expenses, and the current balance."""
+    result = await session.execute(
+        select(CreditTransaction.transaction_type, CreditTransaction.amount)
     )
+    total_income = Decimal("0")
+    total_expense = Decimal("0")
+    for transaction_type, amount in result.all():
+        if transaction_type == "income":
+            total_income += amount
+        else:
+            total_expense += amount
 
     return SummaryResponse(
-        total_users=total_users or 0,
-        total_couples=total_couples or 0,
-        total_activities=total_activities or 0,
+        total_income=total_income,
+        total_expense=total_expense,
+        balance=total_income - total_expense,
     )

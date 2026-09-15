@@ -34,7 +34,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-У `.env` мають бути рядки `BOT_TOKEN=...` та `DATABASE_URL=...`. Секрети не зберігайте в коді, не комітьте `.env` і не додавайте їх до логів.
+У `.env` мають бути рядки `BOT_TOKEN=...`, `DATABASE_URL=...` та `ADMIN_PASSWORD=...`. `ADMIN_PASSWORD` потрібен лише для локального доступу до web-адмінки. Секрети не зберігайте в коді, не комітьте `.env` і не додавайте їх до логів.
 
 3. Запустіть бота:
 
@@ -54,9 +54,9 @@ docker compose run --rm db-check
 
 Скрипт виконує асинхронний `SELECT 1` через SQLAlchemy та `asyncpg` і виводить лише статус підключення — без `DATABASE_URL`, пароля чи інших секретів. Код завершення `0` означає успішне підключення, `1` — що база недоступна або змінна не налаштована.
 
-## Admin API
+## Admin API: кредити Intima
 
-Запустіть read-only API для майбутньої web-адмінки:
+Запустіть API для локальної адмінки кредитів Intima:
 
 ```bash
 docker compose up api
@@ -64,10 +64,12 @@ docker compose up api
 
 FastAPI Docs доступні за адресою `http://localhost:8000/docs`.
 
-- `GET /api/transactions` повертає безпечну історію дій користувачів.
-- `GET /api/summary` повертає кількість користувачів, створених пар і дій.
+- `GET /api/transactions` повертає історію нарахувань і списань кредитів.
+- `POST /api/transactions` створює операцію з полями `type`, `amount`, `category`, `description` і `date`.
+- `DELETE /api/transactions/{id}` видаляє операцію.
+- `GET /api/summary` повертає нараховані, списані й доступні кредити.
 
-API читає `DATABASE_URL` лише на backend. Frontend ніколи не отримує рядок підключення до Neon.
+Усі API-запити вимагають `X-Admin-Password`; backend звіряє його з `ADMIN_PASSWORD` у локальному `.env`. Це навчальний базовий захист, а не production-авторизація. `DATABASE_URL` залишається лише на backend; frontend ніколи не отримує рядок підключення до Neon.
 
 ## React admin dashboard
 
@@ -80,7 +82,7 @@ npm install
 npm run dev
 ```
 
-Відкрийте адресу, яку покаже Vite (зазвичай `http://localhost:5173`). Адмінка отримує дані лише через `/api/transactions` і `/api/summary`; Vite передає ці запити на FastAPI локально.
+Відкрийте адресу, яку покаже Vite (зазвичай `http://localhost:5173`), введіть `ADMIN_PASSWORD` та керуйте кредитами Intima. Адмінка отримує дані лише через `/api`; Vite передає ці запити на FastAPI локально.
 
 ## Debug / Troubleshooting
 

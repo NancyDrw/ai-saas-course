@@ -58,6 +58,16 @@ Telegram-користувачі бота. Запис створюється пі
 - `content_summary` — короткий опис картки, вправи чи сценарію.
 - `created_at` — дата й час операції.
 
+### `credit_transactions`
+
+Окремий ledger кредитів Intima, який адміністратор використовує для навчального прикладу нарахувань і списань. Він не змінює історію дій Telegram-бота в `user_transactions`.
+
+- `transaction_type` — `income` для нарахування або `expense` для списання.
+- `amount` — кількість кредитів, більша за нуль.
+- `category` — категорія, наприклад «Бонус», «AI-сесія» або «Premium-звіт».
+- `description` — необов’язкове пояснення операції.
+- `occurred_on` — дата операції.
+
 ## Зв’язки
 
 - Один `user` може створити багато `couples` через `couples.created_by_user_id`.
@@ -114,6 +124,16 @@ Table user_transactions {
   action_type varchar [not null]
   selected_profile varchar
   content_summary text
+  created_at timestamp [not null, default: `now()`]
+}
+
+Table credit_transactions {
+  id bigint [pk, increment]
+  transaction_type varchar [not null]
+  amount numeric [not null]
+  category varchar [not null]
+  description text
+  occurred_on date [not null]
   created_at timestamp [not null, default: `now()`]
 }
 
