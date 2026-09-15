@@ -49,6 +49,7 @@ export default function App() {
   const [summary, setSummary] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [form, setForm] = useState(emptyTransaction);
+  const [formOpen, setFormOpen] = useState(false);
   const [filter, setFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -117,9 +118,9 @@ export default function App() {
   }, [transactions]);
 
   const cards = [
-    { label: "Нараховано", value: summary?.total_income ?? 0, icon: "✦" },
-    { label: "Списано", value: summary?.total_expense ?? 0, icon: "−" },
-    { label: "Баланс кредитів", value: summary?.balance ?? 0, icon: "◈" },
+    { label: "Нараховано", value: summary?.total_income ?? 0, icon: "✨" },
+    { label: "Списано", value: summary?.total_expense ?? 0, icon: "🌿" },
+    { label: "Баланс кредитів", value: summary?.balance ?? 0, icon: "💜" },
   ];
 
   async function handleAccess(event) {
@@ -175,6 +176,7 @@ export default function App() {
         body: JSON.stringify({ ...form, amount }),
       });
       setForm(emptyTransaction());
+      setFormOpen(false);
       await loadDashboard();
     } catch (requestError) {
       setFormError(
@@ -237,9 +239,9 @@ export default function App() {
       <header className="hero">
         <div>
           <p className="eyebrow">INTIMA · ADMIN</p>
-          <h1>Кредити Intima</h1>
+          <h1>Кредити Intima <span className="title-heart">♥</span></h1>
           <p className="subtitle">
-            Керуйте нарахуваннями та списаннями кредитів за функції й сервіси Intima.
+            Керуйте нарахуваннями та списаннями кредитів для турботливих сервісів Intima.
           </p>
         </div>
         <div className="header-actions">
@@ -270,11 +272,20 @@ export default function App() {
       <section className="transaction-form-section">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">НОВА ОПЕРАЦІЯ</p>
+            <p className="eyebrow">НОВА ОПЕРАЦІЯ · ✦</p>
             <h2>Додати кредити Intima</h2>
           </div>
+          <button
+            aria-expanded={formOpen}
+            className="form-toggle"
+            onClick={() => setFormOpen((isOpen) => !isOpen)}
+            type="button"
+          >
+            {formOpen ? "Згорнути форму" : "＋ Додати операцію"}
+          </button>
         </div>
-        <form className="transaction-form" onSubmit={handleSubmit}>
+        {!formOpen && <p className="form-hint">Нараховуйте бонуси або списуйте кредити за AI-сесії, вправи й персональні плани. 🫶</p>}
+        {formOpen && <form className="transaction-form" onSubmit={handleSubmit}>
           <label>
             Тип
             <select name="type" value={form.type} onChange={handleChange}>
@@ -302,7 +313,7 @@ export default function App() {
           <button className="submit-button" type="submit" disabled={submitting}>
             {submitting ? "Зберігаємо…" : "Додати операцію"}
           </button>
-        </form>
+        </form>}
       </section>
 
       <section className="activity-section">
