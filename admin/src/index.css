@@ -32,6 +32,51 @@ button:disabled {
   padding: 64px 28px 88px;
 }
 
+.access-screen {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 28px;
+}
+
+.access-card {
+  background: #fff;
+  border: 1px solid #ebe3ec;
+  border-radius: 18px;
+  box-shadow: 0 12px 30px rgb(77 51 83 / 0.08);
+  max-width: 480px;
+  padding: 36px;
+  width: 100%;
+}
+
+.access-card h1 {
+  font-size: clamp(2.3rem, 8vw, 3.6rem);
+}
+
+.access-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 28px;
+}
+
+.access-form label {
+  color: #4f3a56;
+  display: grid;
+  font-size: 0.82rem;
+  font-weight: 700;
+  gap: 8px;
+}
+
+.access-form input {
+  background: #fff;
+  border: 1px solid #d9ccdd;
+  border-radius: 10px;
+  color: #33243f;
+  font: inherit;
+  padding: 11px 12px;
+}
+
 .hero,
 .section-heading {
   align-items: center;
@@ -43,6 +88,12 @@ button:disabled {
 .hero {
   border-bottom: 1px solid #e7dfe8;
   padding-bottom: 36px;
+}
+
+.header-actions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
 }
 
 .eyebrow {
@@ -88,6 +139,18 @@ h2 {
   font-weight: 700;
   padding: 12px 20px;
   transition: background 150ms ease;
+}
+
+.logout-button {
+  background: transparent;
+  border: 1px solid #d9ccdd;
+  color: #614c67;
+  font-weight: 700;
+  padding: 11px 16px;
+}
+
+.logout-button:hover {
+  background: #f5eff6;
 }
 
 .refresh-button:hover,
@@ -346,6 +409,10 @@ tbody tr:last-child td {
   .section-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .header-actions {
+    width: 100%;
   }
 
   .summary-grid {

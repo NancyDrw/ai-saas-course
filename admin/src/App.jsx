@@ -42,6 +42,10 @@ function formatCredits(value) {
 }
 
 export default function App() {
+  const [accessPassword, setAccessPassword] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
+  const [accessError, setAccessError] = useState(null);
+  const [authorizing, setAuthorizing] = useState(false);
   const [summary, setSummary] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [form, setForm] = useState(emptyTransaction);
@@ -58,8 +62,8 @@ export default function App() {
 
     try {
       const [summaryData, transactionData] = await Promise.all([
-        fetchJson("/api/summary"),
-        fetchJson("/api/transactions"),
+        fetchJson("/api/summary", { headers: { "X-Admin-Password": accessPassword } }),
+        fetchJson("/api/transactions", { headers: { "X-Admin-Password": accessPassword } }),
       ]);
       setSummary(summaryData);
       setTransactions(transactionData);
@@ -70,11 +74,15 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [accessPassword]);
 
   useEffect(() => {
-    loadDashboard();
-  }, [loadDashboard]);
+    if (accessPassword) {
+      loadDashboard();
+    } else {
+      setLoading(false);
+    }
+  }, [accessPassword, loadDashboard]);
 
   const visibleTransactions = useMemo(
     () =>
@@ -89,6 +97,29 @@ export default function App() {
     { label: "Списано", value: summary?.total_expense ?? 0, icon: "−" },
     { label: "Баланс кредитів", value: summary?.balance ?? 0, icon: "◈" },
   ];
+
+  async function handleAccess(event) {
+    event.preventDefault();
+    if (!passwordInput) {
+      setAccessError("Введіть пароль адміністратора.");
+      return;
+    }
+
+    setAuthorizing(true);
+    setAccessError(null);
+    try {
+      await fetchJson("/api/admin/access", {
+        method: "POST",
+        headers: { "X-Admin-Password": passwordInput },
+      });
+      setAccessPassword(passwordInput);
+      setPasswordInput("");
+    } catch (requestError) {
+      setAccessError(requestError.message || "Не вдалося перевірити пароль.");
+    } finally {
+      setAuthorizing(false);
+    }
+  }
 
   function handleChange(event) {
     const { name, value } = event.target;
@@ -113,7 +144,10 @@ export default function App() {
     try {
       await fetchJson("/api/transactions", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Password": accessPassword,
+        },
         body: JSON.stringify({ ...form, amount }),
       });
       setForm(emptyTransaction());
@@ -135,13 +169,43 @@ export default function App() {
     setDeletingId(transaction.id);
     setError(null);
     try {
-      await fetchJson(`/api/transactions/${transaction.id}`, { method: "DELETE" });
+      await fetchJson(`/api/transactions/${transaction.id}`, {
+        method: "DELETE",
+        headers: { "X-Admin-Password": accessPassword },
+      });
       await loadDashboard();
     } catch {
       setError("Не вдалося видалити операцію. Спробуйте ще раз.");
     } finally {
       setDeletingId(null);
     }
+  }
+
+  if (!accessPassword) {
+    return (
+      <main className="access-screen">
+        <section className="access-card">
+          <p className="eyebrow">INTIMA · ADMIN</p>
+          <h1>Кредити Intima</h1>
+          <p className="subtitle">Введіть локальний пароль адміністратора, щоб відкрити ledger кредитів.</p>
+          <form className="access-form" onSubmit={handleAccess}>
+            <label>
+              Пароль адміністратора
+              <input
+                autoComplete="current-password"
+                onChange={(event) => setPasswordInput(event.target.value)}
+                type="password"
+                value={passwordInput}
+              />
+            </label>
+            {accessError && <p className="form-error" role="alert">{accessError}</p>}
+            <button className="submit-button" disabled={authorizing} type="submit">
+              {authorizing ? "Перевіряємо…" : "Відкрити адмінку"}
+            </button>
+          </form>
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -154,9 +218,12 @@ export default function App() {
             Керуйте нарахуваннями та списаннями кредитів за функції й сервіси Intima.
           </p>
         </div>
-        <button className="refresh-button" onClick={loadDashboard} disabled={loading}>
-          {loading ? "Оновлюємо…" : "Оновити"}
-        </button>
+        <div className="header-actions">
+          <button className="logout-button" onClick={() => setAccessPassword("")}>Вийти</button>
+          <button className="refresh-button" onClick={loadDashboard} disabled={loading}>
+            {loading ? "Оновлюємо…" : "Оновити"}
+          </button>
+        </div>
       </header>
 
       {error && (

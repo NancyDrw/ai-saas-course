@@ -1,6 +1,7 @@
 """API for the Intima credits admin dashboard."""
 
 import os
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -65,6 +66,10 @@ class SummaryResponse(BaseModel):
     balance: Decimal
 
 
+class AdminAccessResponse(BaseModel):
+    authorized: bool
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     async with engine.begin() as connection:
@@ -86,6 +91,29 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         yield session
 
 
+async def require_admin(
+    password: str | None = Header(default=None, alias="X-Admin-Password"),
+) -> None:
+    """Provide minimal local protection for the learning admin dashboard."""
+    expected_password = os.getenv("ADMIN_PASSWORD")
+    if not expected_password:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ADMIN_PASSWORD is not configured on the server.",
+        )
+    if password is None or not secrets.compare_digest(password, expected_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid admin password.",
+        )
+
+
+@app.post("/api/admin/access", response_model=AdminAccessResponse)
+async def verify_admin_access(_: None = Depends(require_admin)) -> AdminAccessResponse:
+    """Validate the password before loading the admin dashboard."""
+    return AdminAccessResponse(authorized=True)
+
+
 def serialize_transaction(transaction: CreditTransaction) -> TransactionResponse:
     return TransactionResponse(
         id=transaction.id,
@@ -100,6 +128,7 @@ def serialize_transaction(transaction: CreditTransaction) -> TransactionResponse
 @app.get("/api/transactions", response_model=list[TransactionResponse])
 async def list_transactions(
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_admin),
 ) -> list[TransactionResponse]:
     """Return Intima credit ledger entries, newest first."""
     result = await session.execute(
@@ -118,6 +147,7 @@ async def list_transactions(
 async def create_transaction(
     payload: TransactionCreate,
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_admin),
 ) -> TransactionResponse:
     """Create a validated credit income or expense entry."""
     transaction = CreditTransaction(
@@ -137,6 +167,7 @@ async def create_transaction(
 async def delete_transaction(
     transaction_id: int,
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_admin),
 ) -> None:
     """Remove one credit ledger entry."""
     transaction = await session.get(CreditTransaction, transaction_id)
@@ -150,6 +181,7 @@ async def delete_transaction(
 @app.get("/api/summary", response_model=SummaryResponse)
 async def get_summary(
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_admin),
 ) -> SummaryResponse:
     """Return credit income, expenses, and the current balance."""
     result = await session.execute(
