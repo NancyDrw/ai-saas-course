@@ -134,6 +134,76 @@ h2 {
   padding: 26px;
 }
 
+.transaction-form-section {
+  background: #f0e9f2;
+  border: 1px solid #e3d7e6;
+  border-radius: 18px;
+  margin-bottom: 24px;
+  padding: 26px;
+}
+
+.transaction-form {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 24px;
+}
+
+.transaction-form label {
+  color: #4f3a56;
+  display: grid;
+  font-size: 0.82rem;
+  font-weight: 700;
+  gap: 8px;
+}
+
+.transaction-form input,
+.transaction-form select,
+.transaction-form textarea {
+  background: #fff;
+  border: 1px solid #d9ccdd;
+  border-radius: 10px;
+  color: #33243f;
+  font: inherit;
+  font-weight: 400;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.transaction-form textarea {
+  resize: vertical;
+}
+
+.transaction-form .form-description {
+  grid-column: span 3;
+}
+
+.form-description span {
+  color: #806e84;
+  font-weight: 400;
+}
+
+.submit-button {
+  align-self: end;
+  background: #5b3d70;
+  color: #fff;
+  font-weight: 700;
+  min-height: 44px;
+  padding: 12px 18px;
+}
+
+.submit-button:hover {
+  background: #432c54;
+}
+
+.form-error {
+  color: #9b2648;
+  font-size: 0.9rem;
+  font-weight: 600;
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .section-heading > span {
   background: #f1eaf2;
   border-radius: 999px;
@@ -141,6 +211,28 @@ h2 {
   font-size: 0.86rem;
   font-weight: 700;
   padding: 8px 12px;
+}
+
+.filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-button {
+  background: #f5eff6;
+  border: 1px solid #ded2e0;
+  color: #614c67;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 8px 12px;
+}
+
+.filter-button.active,
+.filter-button:hover {
+  background: #5b3d70;
+  border-color: #5b3d70;
+  color: #fff;
 }
 
 .table-wrapper {
@@ -159,6 +251,45 @@ td {
   border-bottom: 1px solid #eee8ef;
   padding: 15px 12px;
   text-align: left;
+}
+
+.type-badge {
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 5px 8px;
+}
+
+.type-badge.income {
+  background: #e5f4eb;
+  color: #287145;
+}
+
+.type-badge.expense {
+  background: #f8e8ed;
+  color: #a12e50;
+}
+
+.delete-button {
+  background: transparent;
+  color: #9b2648;
+  font-size: 0.84rem;
+  font-weight: 700;
+  padding: 8px 0;
+}
+
+.delete-button:hover {
+  color: #721a35;
+}
+
+.visually-hidden {
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  position: absolute;
+  width: 1px;
+  clip: rect(0, 0, 0, 0);
 }
 
 th {
@@ -223,5 +354,13 @@ tbody tr:last-child td {
 
   .summary-card {
     min-height: 145px;
+  }
+
+  .transaction-form {
+    grid-template-columns: 1fr;
+  }
+
+  .transaction-form .form-description {
+    grid-column: auto;
   }
 }
