@@ -277,6 +277,7 @@ h2 {
 }
 
 .filter-group {
+  align-items: center;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -296,6 +297,91 @@ h2 {
   background: #5b3d70;
   border-color: #5b3d70;
   color: #fff;
+}
+
+.category-filter select {
+  appearance: none;
+  background: #fff;
+  border: 1px solid #ded2e0;
+  border-radius: 999px;
+  color: #614c67;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 8px 30px 8px 12px;
+}
+
+.insights-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(220px, 0.65fr) minmax(0, 1.35fr);
+  margin-top: 24px;
+}
+
+.insight-card,
+.expense-structure {
+  background: #fff;
+  border: 1px solid #ebe3ec;
+  border-radius: 18px;
+  box-shadow: 0 12px 30px rgb(77 51 83 / 0.06);
+  padding: 26px;
+}
+
+.insight-card h2 {
+  color: #33243f;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2.4rem;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  margin: 24px 0 10px;
+}
+
+.insight-copy {
+  color: #746979;
+  line-height: 1.5;
+  margin-bottom: 0;
+}
+
+.expense-list {
+  display: grid;
+  gap: 18px;
+  list-style: none;
+  margin: 26px 0 0;
+  padding: 0;
+}
+
+.expense-label {
+  display: flex;
+  font-size: 0.92rem;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.expense-label span {
+  color: #463b4b;
+  font-weight: 700;
+}
+
+.expense-label strong {
+  color: #806e84;
+  font-size: 0.82rem;
+}
+
+.expense-bar {
+  background: #f0e9f2;
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.expense-bar span {
+  background: linear-gradient(90deg, #8d5d93, #d18bc5);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  min-width: 8px;
 }
 
 .table-wrapper {
@@ -416,6 +502,10 @@ tbody tr:last-child td {
   }
 
   .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .insights-grid {
     grid-template-columns: 1fr;
   }
 

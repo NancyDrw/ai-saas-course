@@ -50,6 +50,7 @@ export default function App() {
   const [transactions, setTransactions] = useState([]);
   const [form, setForm] = useState(emptyTransaction);
   const [filter, setFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
@@ -84,13 +85,36 @@ export default function App() {
     }
   }, [accessPassword, loadDashboard]);
 
-  const visibleTransactions = useMemo(
-    () =>
-      filter === "all"
-        ? transactions
-        : transactions.filter((transaction) => transaction.type === filter),
-    [filter, transactions],
+  const categories = useMemo(
+    () => [...new Set(transactions.map((transaction) => transaction.category))].sort(),
+    [transactions],
   );
+
+  const visibleTransactions = useMemo(
+    () => transactions.filter((transaction) => (
+      (filter === "all" || transaction.type === filter)
+      && (categoryFilter === "all" || transaction.category === categoryFilter)
+    )),
+    [categoryFilter, filter, transactions],
+  );
+
+  const expenseStructure = useMemo(() => {
+    const categoriesWithExpenses = new Map();
+    for (const transaction of transactions) {
+      if (transaction.type !== "expense") {
+        continue;
+      }
+      categoriesWithExpenses.set(
+        transaction.category,
+        (categoriesWithExpenses.get(transaction.category) || 0) + Number(transaction.amount),
+      );
+    }
+
+    const total = [...categoriesWithExpenses.values()].reduce((sum, amount) => sum + amount, 0);
+    return [...categoriesWithExpenses.entries()]
+      .map(([category, amount]) => ({ category, amount, share: total ? (amount / total) * 100 : 0 }))
+      .sort((first, second) => second.amount - first.amount);
+  }, [transactions]);
 
   const cards = [
     { label: "Нараховано", value: summary?.total_income ?? 0, icon: "✦" },
@@ -298,6 +322,13 @@ export default function App() {
                 {item.label}
               </button>
             ))}
+            <label className="category-filter">
+              <span className="visually-hidden">Категорія</span>
+              <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+                <option value="all">Усі категорії</option>
+                {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+              </select>
+            </label>
           </div>
         </div>
 
@@ -337,6 +368,41 @@ export default function App() {
             </table>
           </div>
         )}
+      </section>
+
+      <section className="insights-grid" aria-label="Статистика кредитів">
+        <article className="insight-card">
+          <p className="eyebrow">СТАТИСТИКА</p>
+          <h2>{transactions.length} операцій</h2>
+          <p className="insight-copy">
+            {categories.length} {categories.length === 1 ? "категорія" : "категорій"} у ledger кредитів Intima.
+          </p>
+        </article>
+        <article className="expense-structure">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">СТРУКТУРА СПИСАНЬ</p>
+              <h2>Кредити за категоріями</h2>
+            </div>
+          </div>
+          {expenseStructure.length === 0 ? (
+            <p className="empty-state">Додайте списання, щоб побачити структуру витрат кредитів.</p>
+          ) : (
+            <ul className="expense-list">
+              {expenseStructure.map((item) => (
+                <li key={item.category}>
+                  <div className="expense-label">
+                    <span>{item.category}</span>
+                    <strong>{formatCredits(item.amount)} кредитів · {Math.round(item.share)}%</strong>
+                  </div>
+                  <div className="expense-bar" aria-label={`${item.category}: ${Math.round(item.share)}%`}>
+                    <span style={{ width: `${item.share}%` }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
       </section>
     </main>
   );
