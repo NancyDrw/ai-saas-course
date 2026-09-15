@@ -1,8 +1,9 @@
 """Async SQLAlchemy models and Neon connection helpers."""
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Numeric, String, Text, func
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -65,6 +66,22 @@ class UserTransaction(Base):
     action_type: Mapped[str] = mapped_column(String(100), nullable=False)
     selected_profile: Mapped[str | None] = mapped_column(String(50))
     content_summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class CreditTransaction(Base):
+    """An admin-managed ledger entry for Intima credits."""
+
+    __tablename__ = "credit_transactions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    transaction_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    category: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    occurred_on: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
