@@ -15,7 +15,6 @@ from typing import Literal
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from google import genai
-from google.genai import types
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -202,19 +201,18 @@ def generate_transaction_analysis(
 ) -> TransactionAiAnalysis:
     """Call Gemini synchronously; the API route runs this function in a thread."""
     client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
+    interaction = client.interactions.create(
         model=GEMINI_MODEL,
-        contents=build_analysis_prompt(transactions),
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=TransactionAiAnalysis,
-            temperature=0.2,
-            max_output_tokens=700,
-        ),
+        input=build_analysis_prompt(transactions),
+        response_format={
+            "type": "text",
+            "mime_type": "application/json",
+            "schema": TransactionAiAnalysis.model_json_schema(),
+        },
     )
-    if not response.text:
+    if not interaction.output_text:
         raise ValueError("Gemini returned an empty response.")
-    return TransactionAiAnalysis.model_validate_json(response.text)
+    return TransactionAiAnalysis.model_validate_json(interaction.output_text)
 
 
 @app.get("/api/transactions", response_model=list[TransactionResponse])

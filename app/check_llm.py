@@ -18,11 +18,11 @@ def main() -> None:
         raise RuntimeError("GEMINI_API_KEY is not set in the local .env file.")
 
     client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
+    interaction = client.interactions.create(
         model=MODEL_NAME,
-        contents="Відповідай одним реченням: Gemini API працює?",
+        input="Відповідай одним реченням: Gemini API працює?",
     )
-    print(response.text)
+    print(interaction.output_text)
 
 
 if __name__ == "__main__":
