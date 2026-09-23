@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .database import Base, CreditTransaction, create_database_engine
+from .prompts import build_transaction_analysis_prompt
 
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -144,38 +145,6 @@ def serialize_transaction(transaction: CreditTransaction) -> TransactionResponse
     )
 
 
-def build_analysis_prompt(transactions: list[CreditTransaction]) -> str:
-    """Describe the exact Intima credit ledger data available to Gemini."""
-    ledger_rows = "\n".join(
-        (
-            f"- date={transaction.occurred_on.isoformat()}, "
-            f"type={transaction.transaction_type}, "
-            f"amount={transaction.amount}, category={transaction.category}"
-        )
-        for transaction in transactions
-    ) or "(Операцій немає.)"
-
-    return f"""
-Ти — AI-аналітик навчального сервісу Intima. Аналізуєш лише внутрішні кредити
-Intima, а не реальні банківські гроші. Відповідай українською мовою.
-
-Завдання: коротко проаналізуй ledger нарахувань і списань, назви основні
-категорії списань, можливі ризики й практичні поради для адміністратора.
-
-Критичні обмеження:
-- Використовуй ТІЛЬКИ операції нижче.
-- Не вигадуй категорії, суми, дати, факти або причини операцій.
-- У top_expense_categories вказуй тільки категорії типу expense та їхню точну
-  суму зі вхідних даних.
-- Якщо даних недостатньо, прямо скажи про це у summary та поверни порожні
-  списки там, де висновок неможливий.
-- Не надавай медичних, юридичних чи інвестиційних порад.
-
-Операції ledger:
-{ledger_rows}
-""".strip()
-
-
 def validate_analysis(
     analysis: TransactionAiAnalysis,
     transactions: list[CreditTransaction],
@@ -203,7 +172,7 @@ def generate_transaction_analysis(
     client = genai.Client(api_key=api_key)
     interaction = client.interactions.create(
         model=GEMINI_MODEL,
-        input=build_analysis_prompt(transactions),
+        input=build_transaction_analysis_prompt(transactions),
         response_format={
             "type": "text",
             "mime_type": "application/json",
