@@ -57,6 +57,9 @@ export default function App() {
   const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState(null);
   const [formError, setFormError] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState(null);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -207,6 +210,28 @@ export default function App() {
     }
   }
 
+  async function handleAnalyzeTransactions() {
+    if (analysisLoading) {
+      return;
+    }
+
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+    try {
+      const result = await fetchJson("/api/ai/analyze-transactions", {
+        method: "POST",
+        headers: { "X-Admin-Password": accessPassword },
+      });
+      setAnalysis(result);
+    } catch {
+      setAnalysisError(
+        "Не вдалося виконати AI-аналіз. Переконайтеся, що Gemini API доступний, і спробуйте ще раз.",
+      );
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }
+
   if (!accessPassword) {
     return (
       <main className="access-screen">
@@ -267,6 +292,88 @@ export default function App() {
             <strong>{formatCredits(card.value)}</strong>
           </article>
         ))}
+      </section>
+
+      <section className="ai-analysis-section" aria-labelledby="ai-analysis-heading">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">AI INSIGHT · ✨</p>
+            <h2 id="ai-analysis-heading">Аналіз кредитів Intima</h2>
+            <p className="analysis-intro">
+              Gemini аналізує поточний ledger лише за вашим запитом і не змінює операції.
+            </p>
+          </div>
+          <button
+            className="analysis-button"
+            disabled={analysisLoading}
+            onClick={handleAnalyzeTransactions}
+            type="button"
+          >
+            {analysisLoading ? "Аналізуємо…" : "✨ Запустити AI-аналіз"}
+          </button>
+        </div>
+
+        {analysisLoading && (
+          <p className="analysis-loading" role="status">
+            Gemini читає узагальнені дані ledger і формує висновок…
+          </p>
+        )}
+
+        {analysisError && (
+          <div className="analysis-error" role="alert">
+            <p>{analysisError}</p>
+            <button onClick={handleAnalyzeTransactions} type="button">Спробувати ще раз</button>
+          </div>
+        )}
+
+        {analysis && !analysisLoading && (
+          <div className="analysis-results">
+            <article className="analysis-summary-card">
+              <p className="eyebrow">ВИСНОВОК · 💜</p>
+              <p>{analysis.summary}</p>
+            </article>
+
+            <div className="analysis-detail-grid">
+              <article className="analysis-detail-card">
+                <h3>🌿 Основні списання</h3>
+                {analysis.top_expense_categories.length === 0 ? (
+                  <p>Даних про списання поки недостатньо.</p>
+                ) : (
+                  <ul className="analysis-category-list">
+                    {analysis.top_expense_categories.map((item) => (
+                      <li key={item.category}>
+                        <span>{item.category}</span>
+                        <strong>{formatCredits(item.amount)} кредитів</strong>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </article>
+
+              <article className="analysis-detail-card risk-card">
+                <h3>⚠️ Можливі ризики</h3>
+                {analysis.risks.length === 0 ? (
+                  <p>Явних ризиків у наявних даних не виявлено.</p>
+                ) : (
+                  <ul className="analysis-text-list">
+                    {analysis.risks.map((risk) => <li key={risk}>{risk}</li>)}
+                  </ul>
+                )}
+              </article>
+
+              <article className="analysis-detail-card advice-card">
+                <h3>🫶 Практичні поради</h3>
+                {analysis.advice.length === 0 ? (
+                  <p>Поки немає окремих рекомендацій.</p>
+                ) : (
+                  <ul className="analysis-text-list">
+                    {analysis.advice.map((advice) => <li key={advice}>{advice}</li>)}
+                  </ul>
+                )}
+              </article>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="transaction-form-section">
