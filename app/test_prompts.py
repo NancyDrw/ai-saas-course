@@ -31,6 +31,8 @@ class TransactionAnalysisPromptTests(unittest.TestCase):
         self.assertIn("Нараховано: 10.00", prompt)
         self.assertIn("AI-сесія: 3.00", prompt)
         self.assertIn("Баланс: 7.00", prompt)
+        self.assertIn("Останні списання:", prompt)
+        self.assertIn("2026-09-15: AI-сесія — 2.00", prompt)
 
     def test_handles_an_empty_ledger_without_inventing_facts(self) -> None:
         prompt = build_transaction_analysis_prompt([])
@@ -38,6 +40,7 @@ class TransactionAnalysisPromptTests(unittest.TestCase):
         self.assertIn("Операцій: 0", prompt)
         self.assertIn("списань немає", prompt)
         self.assertIn("не вигадуй суми, категорії, дати чи факти", prompt)
+        self.assertIn("Не пиши, що обсяг даних обмежений", prompt)
         self.assertGreater(estimate_tokens(prompt), 0)
 
 
