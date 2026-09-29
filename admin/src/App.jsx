@@ -68,6 +68,9 @@ export default function App() {
   const [insightChatInput, setInsightChatInput] = useState("");
   const [insightChatLoading, setInsightChatLoading] = useState(false);
   const [insightChatError, setInsightChatError] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null);
+  const [actionProcessing, setActionProcessing] = useState(false);
+  const [pendingActionError, setPendingActionError] = useState(null);
   const [insightChatThreadId, setInsightChatThreadId] = useState(
     () => window.sessionStorage.getItem(insightChatThreadStorageKey) || "",
   );
@@ -268,6 +271,10 @@ export default function App() {
       setInsightChatThreadId(result.thread_id);
       window.sessionStorage.setItem(insightChatThreadStorageKey, result.thread_id);
       setInsightChatMessages((current) => [...current, { role: "assistant", content: result.answer }]);
+      if (result.pending_action) {
+        setPendingAction(result.pending_action);
+        setPendingActionError(null);
+      }
     } catch (error) {
       setInsightChatError(
         error?.status === 429
@@ -285,6 +292,60 @@ export default function App() {
     setInsightChatMessages([]);
     setInsightChatInput("");
     setInsightChatError(null);
+  }
+
+  async function handleConfirmPendingAction() {
+    if (!pendingAction || actionProcessing) {
+      return;
+    }
+
+    setActionProcessing(true);
+    setPendingActionError(null);
+    try {
+      const result = await fetchJson(`/api/ai/actions/${pendingAction.id}/confirm`, {
+        method: "POST",
+        headers: { "X-Admin-Password": accessPassword },
+      });
+      setPendingAction(null);
+      setInsightChatMessages((current) => [
+        ...current,
+        { role: "assistant", content: "✅ Дію підтверджено. Ledger кредитів оновлено." },
+      ]);
+      await loadDashboard();
+      return result;
+    } catch (requestError) {
+      setPendingActionError(
+        requestError.message || "Не вдалося підтвердити запропоновану дію.",
+      );
+    } finally {
+      setActionProcessing(false);
+    }
+  }
+
+  async function handleCancelPendingAction() {
+    if (!pendingAction || actionProcessing) {
+      return;
+    }
+
+    setActionProcessing(true);
+    setPendingActionError(null);
+    try {
+      await fetchJson(`/api/ai/actions/${pendingAction.id}/cancel`, {
+        method: "POST",
+        headers: { "X-Admin-Password": accessPassword },
+      });
+      setPendingAction(null);
+      setInsightChatMessages((current) => [
+        ...current,
+        { role: "assistant", content: "Дію скасовано. Ledger кредитів не змінювався." },
+      ]);
+    } catch (requestError) {
+      setPendingActionError(
+        requestError.message || "Не вдалося скасувати запропоновану дію.",
+      );
+    } finally {
+      setActionProcessing(false);
+    }
   }
 
   if (!accessPassword) {
@@ -387,6 +448,56 @@ export default function App() {
 
         {insightChatError && <p className="chat-error" role="alert">{insightChatError}</p>}
 
+        {pendingAction?.status === "pending" && (
+          <section className="pending-action-card" aria-labelledby="pending-action-heading">
+            <div>
+              <p className="eyebrow">ПОТРІБНЕ ПІДТВЕРДЖЕННЯ · 🛡️</p>
+              <h3 id="pending-action-heading">Запропонована дія</h3>
+            </div>
+            <dl className="pending-action-details">
+              <div>
+                <dt>Тип</dt>
+                <dd>{pendingAction.payload.type === "expense" ? "Списання кредитів" : "Нарахування кредитів"}</dd>
+              </div>
+              <div>
+                <dt>Кредити</dt>
+                <dd>{formatCredits(pendingAction.payload.amount)}</dd>
+              </div>
+              <div>
+                <dt>Категорія</dt>
+                <dd>{pendingAction.payload.category}</dd>
+              </div>
+              <div>
+                <dt>Дата</dt>
+                <dd>{formatDate(pendingAction.payload.date)}</dd>
+              </div>
+              <div className="pending-action-description">
+                <dt>Опис</dt>
+                <dd>{pendingAction.payload.description || "—"}</dd>
+              </div>
+            </dl>
+            {pendingActionError && <p className="pending-action-error" role="alert">{pendingActionError}</p>}
+            <div className="pending-action-buttons">
+              <button
+                className="confirm-action-button"
+                disabled={actionProcessing}
+                onClick={handleConfirmPendingAction}
+                type="button"
+              >
+                {actionProcessing ? "Обробляємо…" : "✓ Підтвердити"}
+              </button>
+              <button
+                className="cancel-action-button"
+                disabled={actionProcessing}
+                onClick={handleCancelPendingAction}
+                type="button"
+              >
+                Скасувати
+              </button>
+            </div>
+          </section>
+        )}
+
         <form className="chat-form" onSubmit={handleInsightChatSubmit}>
           <label className="visually-hidden" htmlFor="ai-insight-chat-input">Запит до AI INSIGHT</label>
           <textarea
@@ -405,6 +516,7 @@ export default function App() {
           <button onClick={() => setInsightChatInput("Який поточний баланс кредитів?")} type="button">💜 Баланс</button>
           <button onClick={() => setInsightChatInput("Покажи найбільші списання")} type="button">🌿 Списання</button>
           <button onClick={() => setInsightChatInput("На що витратили найбільше кредитів?")} type="button">📊 Категорії</button>
+          <button onClick={() => setInsightChatInput("Списати 3 кредити за AI-сесію сьогодні")} type="button">🛡️ Підготувати списання</button>
         </div>
       </section>
 

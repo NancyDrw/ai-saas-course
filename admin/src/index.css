@@ -308,6 +308,80 @@ h2 {
   margin: 14px 0 0;
 }
 
+.pending-action-card {
+  background: #fff;
+  border: 1px solid #cfe3d7;
+  border-radius: 14px;
+  margin-top: 16px;
+  padding: 20px;
+}
+
+.pending-action-card h3 {
+  color: #3f5246;
+  font-size: 1.08rem;
+  margin: 4px 0 0;
+}
+
+.pending-action-details {
+  display: grid;
+  gap: 12px 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 18px 0;
+}
+
+.pending-action-details div {
+  border-bottom: 1px solid #edf2ee;
+  padding-bottom: 10px;
+}
+
+.pending-action-details dt {
+  color: #7a6e7b;
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.pending-action-details dd {
+  color: #403446;
+  font-weight: 700;
+  margin: 4px 0 0;
+}
+
+.pending-action-details .pending-action-description {
+  grid-column: 1 / -1;
+}
+
+.pending-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.confirm-action-button {
+  background: #417254;
+  color: #fff;
+  font-weight: 750;
+  padding: 11px 16px;
+}
+
+.confirm-action-button:hover {
+  background: #315d42;
+}
+
+.cancel-action-button {
+  background: transparent;
+  border: 1px solid #cfbfcf;
+  color: #634f67;
+  font-weight: 750;
+  padding: 11px 16px;
+}
+
+.pending-action-error {
+  color: #862844;
+  font-weight: 650;
+  margin: 0 0 14px;
+}
+
 .chat-form {
   align-items: end;
   display: grid;
