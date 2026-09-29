@@ -19,11 +19,15 @@ const filters = [
   { value: "expense", label: "Списання" },
 ];
 
+const insightChatThreadStorageKey = "ai-insight-chat-thread";
+
 async function fetchJson(path, options = {}) {
   const response = await fetch(path, options);
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(body?.detail || `API returned ${response.status}`);
+    const error = new Error(body?.detail || `API returned ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
   return response.status === 204 ? null : response.json();
 }
@@ -60,6 +64,13 @@ export default function App() {
   const [analysis, setAnalysis] = useState(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState(null);
+  const [insightChatMessages, setInsightChatMessages] = useState([]);
+  const [insightChatInput, setInsightChatInput] = useState("");
+  const [insightChatLoading, setInsightChatLoading] = useState(false);
+  const [insightChatError, setInsightChatError] = useState(null);
+  const [insightChatThreadId, setInsightChatThreadId] = useState(
+    () => window.sessionStorage.getItem(insightChatThreadStorageKey) || "",
+  );
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -223,13 +234,57 @@ export default function App() {
         headers: { "X-Admin-Password": accessPassword },
       });
       setAnalysis(result);
-    } catch {
+    } catch (error) {
       setAnalysisError(
-        "Не вдалося виконати AI-аналіз. Переконайтеся, що Gemini API доступний, і спробуйте ще раз.",
+        error?.status === 429
+          ? error.message
+          : "Не вдалося виконати AI-аналіз. Переконайтеся, що Gemini API доступний, і спробуйте ще раз.",
       );
     } finally {
       setAnalysisLoading(false);
     }
+  }
+
+  async function handleInsightChatSubmit(event) {
+    event.preventDefault();
+    const message = insightChatInput.trim();
+    if (!message || insightChatLoading) {
+      return;
+    }
+
+    setInsightChatMessages((current) => [...current, { role: "user", content: message }]);
+    setInsightChatInput("");
+    setInsightChatError(null);
+    setInsightChatLoading(true);
+    try {
+      const result = await fetchJson("/api/ai/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Password": accessPassword,
+        },
+        body: JSON.stringify({ message, thread_id: insightChatThreadId || undefined }),
+      });
+      setInsightChatThreadId(result.thread_id);
+      window.sessionStorage.setItem(insightChatThreadStorageKey, result.thread_id);
+      setInsightChatMessages((current) => [...current, { role: "assistant", content: result.answer }]);
+    } catch (error) {
+      setInsightChatError(
+        error?.status === 429
+          ? error.message
+          : "Не вдалося отримати відповідь AI INSIGHT. Спробуйте ще раз трохи пізніше.",
+      );
+    } finally {
+      setInsightChatLoading(false);
+    }
+  }
+
+  function startNewInsightChat() {
+    window.sessionStorage.removeItem(insightChatThreadStorageKey);
+    setInsightChatThreadId("");
+    setInsightChatMessages([]);
+    setInsightChatInput("");
+    setInsightChatError(null);
   }
 
   if (!accessPassword) {
@@ -292,6 +347,65 @@ export default function App() {
             <strong>{formatCredits(card.value)}</strong>
           </article>
         ))}
+      </section>
+
+      <section className="ai-chat-section" aria-labelledby="ai-insight-chat-heading">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">AI INSIGHT CHAT · ✨</p>
+            <h2 id="ai-insight-chat-heading">Помічник з кредитів Intima</h2>
+            <p className="chat-intro">
+              Запитайте про баланс, списання, категорії витрат або конкретний місяць. AI лише читає дані та нічого не змінює.
+            </p>
+          </div>
+          <button className="new-chat-button" onClick={startNewInsightChat} type="button">
+            Новий діалог
+          </button>
+        </div>
+
+        <div className="chat-history" aria-live="polite">
+          {insightChatMessages.length === 0 ? (
+            <div className="chat-welcome">
+              <span aria-hidden="true">✨</span>
+              <p>Я можу показати баланс, найбільші списання або структуру витрат за місяць.</p>
+            </div>
+          ) : (
+            insightChatMessages.map((message, index) => (
+              <article className={`chat-message ${message.role}`} key={`${message.role}-${index}`}>
+                <span>{message.role === "user" ? "Ви" : "AI INSIGHT"}</span>
+                <p>{message.content}</p>
+              </article>
+            ))
+          )}
+          {insightChatLoading && (
+            <article className="chat-message assistant chat-loading" role="status">
+              <span>AI INSIGHT</span>
+              <p>Читаю дані кредитів…</p>
+            </article>
+          )}
+        </div>
+
+        {insightChatError && <p className="chat-error" role="alert">{insightChatError}</p>}
+
+        <form className="chat-form" onSubmit={handleInsightChatSubmit}>
+          <label className="visually-hidden" htmlFor="ai-insight-chat-input">Запит до AI INSIGHT</label>
+          <textarea
+            id="ai-insight-chat-input"
+            disabled={insightChatLoading}
+            onChange={(event) => setInsightChatInput(event.target.value)}
+            placeholder="Наприклад: Який мій баланс і найбільші списання?"
+            rows="2"
+            value={insightChatInput}
+          />
+          <button className="chat-send-button" disabled={insightChatLoading || !insightChatInput.trim()} type="submit">
+            {insightChatLoading ? "Аналізуємо…" : "Запитати"}
+          </button>
+        </form>
+        <div className="chat-suggestions" aria-label="Приклади фінансових запитів">
+          <button onClick={() => setInsightChatInput("Який поточний баланс кредитів?")} type="button">💜 Баланс</button>
+          <button onClick={() => setInsightChatInput("Покажи найбільші списання")} type="button">🌿 Списання</button>
+          <button onClick={() => setInsightChatInput("На що витратили найбільше кредитів?")} type="button">📊 Категорії</button>
+        </div>
       </section>
 
       <section className="ai-analysis-section" aria-labelledby="ai-analysis-heading">

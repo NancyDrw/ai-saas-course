@@ -73,15 +73,31 @@ def build_transaction_analysis_prompt(transactions: Sequence[LedgerEntry]) -> st
             expense_totals.items(), key=lambda item: item[1], reverse=True
         )
     ) or "- списань немає"
+    recent_expenses = sorted(
+        (transaction for transaction in transactions if transaction.transaction_type == "expense"),
+        key=lambda transaction: transaction.occurred_on,
+        reverse=True,
+    )[:3]
+    recent_expense_rows = "\n".join(
+        (
+            f"- {transaction.occurred_on.isoformat()}: {transaction.category} — "
+            f"{format_credits(transaction.amount)} кредитів"
+        )
+        for transaction in recent_expenses
+    ) or "- списань немає"
 
     return f"""
 Роль: AI-аналітик внутрішніх кредитів Intima. Відповідай українською.
-Задача: дай короткий аналіз лише за фактами нижче.
+Задача: дай короткий фактичний огляд операцій, балансу, останніх списань і
+найбільших категорій витрат лише за фактами нижче.
 Правила: не вигадуй суми, категорії, дати чи факти; не давай медичних,
-юридичних або інвестиційних порад. Якщо даних мало — скажи це у summary.
+юридичних або інвестиційних порад. У summary назви кількість операцій, баланс
+і, якщо вони є, останні списання. Не пиши, що обсяг даних обмежений або що
+даних недостатньо. Якщо операцій або списань немає, просто вкажи цей факт.
 Для top_expense_categories використовуй тільки категорії та точні суми зі
 списку «Списання за категоріями». Поверни JSON з полями summary,
-top_expense_categories, risks, advice.
+top_expense_categories, risks, advice. Поверни порожній список risks або advice,
+якщо для нього немає фактичної підстави; не пояснюй це браком даних.
 
 Факти ledger:
 - Операцій: {len(transactions)}
@@ -90,6 +106,8 @@ top_expense_categories, risks, advice.
 - Баланс: {format_credits(total_income - total_expense)} кредитів
 Списання за категоріями:
 {expense_rows}
+Останні списання:
+{recent_expense_rows}
 """.strip()
 
 

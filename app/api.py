@@ -3,6 +3,7 @@
 import os
 import secrets
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -11,6 +12,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
+from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, status
@@ -19,6 +21,8 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from .chat_memory import ChatMessage, create_chat_graph
+from .chat_tools import GEMINI_INSIGHT_TOOLS, execute_insight_tool
 from .database import Base, CreditTransaction, create_database_engine
 from .prompts import build_transaction_analysis_prompt
 
@@ -27,6 +31,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 logger = logging.getLogger(__name__)
 GEMINI_MODEL = "gemini-3.6-flash"
+GEMINI_RATE_LIMIT_MESSAGE = "Ліміт запитів Gemini тимчасово вичерпано. Спробуйте ще раз трохи пізніше."
 
 database_url = os.getenv("DATABASE_URL")
 if not database_url or database_url == "your_database_url_here":
@@ -90,6 +95,28 @@ class TransactionAiAnalysis(BaseModel):
     advice: list[str] = Field(max_length=5)
 
 
+class AiChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=1500)
+    thread_id: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{32}$",
+        description="A backend-created identifier for one short-term chat thread.",
+    )
+
+    @field_validator("message")
+    @classmethod
+    def normalize_message(cls, value: str) -> str:
+        message = value.strip()
+        if not message:
+            raise ValueError("Message must not be empty.")
+        return message
+
+
+class AiChatResponse(BaseModel):
+    answer: str = Field(min_length=1, max_length=2000)
+    thread_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     async with engine.begin() as connection:
@@ -145,6 +172,11 @@ def serialize_transaction(transaction: CreditTransaction) -> TransactionResponse
     )
 
 
+def is_gemini_rate_limit_error(error: Exception) -> bool:
+    """Recognize the SDK's rate-limit response without returning internals."""
+    return type(error).__name__ == "RateLimitError" or getattr(error, "status_code", None) == 429
+
+
 def validate_analysis(
     analysis: TransactionAiAnalysis,
     transactions: list[CreditTransaction],
@@ -182,6 +214,100 @@ def generate_transaction_analysis(
     if not interaction.output_text:
         raise ValueError("Gemini returned an empty response.")
     return TransactionAiAnalysis.model_validate_json(interaction.output_text)
+
+
+def build_insight_chat_input(messages: list[ChatMessage]) -> str:
+    """Create a bounded, tool-first prompt for AI INSIGHT."""
+    conversation = "\n".join(
+        f"{'Користувач' if message['role'] == 'user' else 'Помічник'}: {message['content']}"
+        for message in messages[-12:]
+    )
+    return f"""
+Ти — AI INSIGHT, помічник з аналізу внутрішніх кредитів Intima, а не реальних
+банківських грошей. Відповідай українською, доброзичливо й стисло.
+
+Для будь-якого питання про операції, баланс, списання, категорії або період
+обов'язково викликай один чи кілька read-only tools. Якщо період не названо,
+використовуй all. Після tool-виклику використовуй лише перевірені факти з його
+результату: не вигадуй суми, категорії, дати чи операції.
+
+Ти можеш тільки аналізувати. Не додавай і не видаляй операції, не змінюй суми
+чи категорії, не виконуй SQL і не запитуй доступ до .env.
+
+Історія поточного діалогу:
+{conversation}
+""".strip()
+
+
+def create_insight_chat_interaction(api_key: str, messages: list[ChatMessage]):
+    """Start one Gemini interaction that can select only financial read tools."""
+    client = genai.Client(api_key=api_key)
+    interaction = client.interactions.create(
+        model=GEMINI_MODEL,
+        input=build_insight_chat_input(messages),
+        tools=GEMINI_INSIGHT_TOOLS,
+        store=False,
+    )
+    return client, interaction
+
+
+def write_insight_answer_from_tool_results(
+    client, messages: list[ChatMessage], tool_outputs: list[dict[str, object]]
+):
+    """Ask Gemini for a final answer using only trusted backend tool output."""
+    facts = json.dumps(tool_outputs, ensure_ascii=False)
+    return client.interactions.create(
+        model=GEMINI_MODEL,
+        input=(
+            f"{build_insight_chat_input(messages)}\n\n"
+            "Перевірені результати backend tools:\n"
+            f"{facts}\n\n"
+            "Сформуй коротку відповідь лише на основі цих фактів."
+        ),
+        store=False,
+    )
+
+
+async def generate_insight_chat_answer(messages: list[ChatMessage]) -> str:
+    """Run Gemini -> allow-listed tool -> Gemini, with no write access."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY is not configured.")
+
+    client, interaction = await asyncio.to_thread(
+        create_insight_chat_interaction, api_key, messages
+    )
+    tool_calls = [
+        step for step in (interaction.steps or []) if getattr(step, "type", None) == "function_call"
+    ]
+    if not tool_calls:
+        if not interaction.output_text:
+            raise ValueError("Gemini returned an empty chat response.")
+        return interaction.output_text.strip()
+
+    tool_outputs: list[dict[str, object]] = []
+    for tool_call in tool_calls:
+        arguments = getattr(tool_call, "arguments", None)
+        if not isinstance(arguments, dict):
+            arguments = {}
+        try:
+            result = await execute_insight_tool(session_factory, tool_call.name, arguments)
+        except (TypeError, ValueError):
+            result = {"error": "Не вдалося безпечно прочитати дані кредитів."}
+        tool_outputs.append({"tool": tool_call.name, "result": result})
+
+    final_interaction = await asyncio.to_thread(
+        write_insight_answer_from_tool_results,
+        client,
+        messages,
+        tool_outputs,
+    )
+    if not final_interaction.output_text:
+        raise ValueError("Gemini returned an empty chat response after tool results.")
+    return final_interaction.output_text.strip()
+
+
+insight_chat_graph = create_chat_graph(generate_insight_chat_answer)
 
 
 @app.get("/api/transactions", response_model=list[TransactionResponse])
@@ -298,8 +424,53 @@ async def analyze_transactions(
             detail="AI returned an invalid analysis. Please try again.",
         ) from None
     except Exception as error:
+        if is_gemini_rate_limit_error(error):
+            logger.warning("Gemini transaction analysis rate limit reached.")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=GEMINI_RATE_LIMIT_MESSAGE,
+            ) from None
         logger.error("Gemini transaction analysis failed: %s", type(error).__name__)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI analysis is temporarily unavailable. Please try again.",
+        ) from None
+
+
+@app.post("/api/ai/chat", response_model=AiChatResponse)
+async def chat_with_ai_insight(
+    payload: AiChatRequest,
+    _: None = Depends(require_admin),
+) -> AiChatResponse:
+    """Continue one short-term, tool-assisted AI INSIGHT conversation."""
+    if not os.getenv("GEMINI_API_KEY"):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GEMINI_API_KEY is not configured on the server.",
+        )
+
+    thread_id = payload.thread_id or uuid4().hex
+    try:
+        result = await insight_chat_graph.ainvoke(
+            {"messages": [{"role": "user", "content": payload.message}], "answer": ""},
+            config={"configurable": {"thread_id": thread_id}},
+        )
+        return AiChatResponse(answer=result["answer"], thread_id=thread_id)
+    except ValueError:
+        logger.warning("AI INSIGHT chat returned an invalid response.")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI INSIGHT returned an invalid response. Please try again.",
+        ) from None
+    except Exception as error:
+        if is_gemini_rate_limit_error(error):
+            logger.warning("AI INSIGHT chat rate limit reached.")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=GEMINI_RATE_LIMIT_MESSAGE,
+            ) from None
+        logger.error("AI INSIGHT chat failed: %s", type(error).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI INSIGHT is temporarily unavailable. Please try again.",
         ) from None
