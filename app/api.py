@@ -7,8 +7,7 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
@@ -21,10 +20,21 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from .ai_actions import (
+    CANCELLED,
+    CONFIRMED,
+    CONTROLLED_ACTION_TOOLS,
+    CREATE_CREDIT_TRANSACTION,
+    PENDING,
+    CreditTransactionActionPayload,
+    cancel_pending_action,
+    confirm_credit_transaction,
+    prepare_credit_transaction,
+    serialize_pending_action,
+)
 from .chat_memory import ChatMessage, create_chat_graph
 from .chat_tools import GEMINI_INSIGHT_TOOLS, execute_insight_tool
-from .database import Base, CreditTransaction, create_database_engine
-from .prompts import build_transaction_analysis_prompt
+from .database import Base, CreditTransaction, PendingAiAction, create_database_engine
 
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -83,18 +93,6 @@ class AdminAccessResponse(BaseModel):
     authorized: bool
 
 
-class ExpenseCategoryAnalysis(BaseModel):
-    category: str = Field(min_length=1, max_length=100)
-    amount: Decimal = Field(ge=0)
-
-
-class TransactionAiAnalysis(BaseModel):
-    summary: str = Field(min_length=1, max_length=600)
-    top_expense_categories: list[ExpenseCategoryAnalysis] = Field(max_length=5)
-    risks: list[str] = Field(max_length=5)
-    advice: list[str] = Field(max_length=5)
-
-
 class AiChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1500)
     thread_id: str | None = Field(
@@ -115,6 +113,21 @@ class AiChatRequest(BaseModel):
 class AiChatResponse(BaseModel):
     answer: str = Field(min_length=1, max_length=2000)
     thread_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    pending_action: "PendingActionResponse | None" = None
+
+
+class PendingActionResponse(BaseModel):
+    id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    thread_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    action_type: Literal["create_credit_transaction"]
+    payload: CreditTransactionActionPayload
+    status: Literal["pending", "confirmed", "cancelled", "failed"]
+    created_at: datetime | None
+
+
+class ActionConfirmationResponse(BaseModel):
+    action: PendingActionResponse
+    transaction: TransactionResponse | None = None
 
 
 @asynccontextmanager
@@ -177,45 +190,6 @@ def is_gemini_rate_limit_error(error: Exception) -> bool:
     return type(error).__name__ == "RateLimitError" or getattr(error, "status_code", None) == 429
 
 
-def validate_analysis(
-    analysis: TransactionAiAnalysis,
-    transactions: list[CreditTransaction],
-) -> TransactionAiAnalysis:
-    """Reject categories or sums that do not exactly match the credit ledger."""
-    expense_totals: defaultdict[str, Decimal] = defaultdict(lambda: Decimal("0"))
-    for transaction in transactions:
-        if transaction.transaction_type == "expense":
-            expense_totals[transaction.category] += transaction.amount
-
-    for category in analysis.top_expense_categories:
-        if category.category not in expense_totals:
-            raise ValueError("The AI returned an unknown expense category.")
-        if category.amount != expense_totals[category.category]:
-            raise ValueError("The AI returned an incorrect expense amount.")
-
-    return analysis
-
-
-def generate_transaction_analysis(
-    api_key: str,
-    transactions: list[CreditTransaction],
-) -> TransactionAiAnalysis:
-    """Call Gemini synchronously; the API route runs this function in a thread."""
-    client = genai.Client(api_key=api_key)
-    interaction = client.interactions.create(
-        model=GEMINI_MODEL,
-        input=build_transaction_analysis_prompt(transactions),
-        response_format={
-            "type": "text",
-            "mime_type": "application/json",
-            "schema": TransactionAiAnalysis.model_json_schema(),
-        },
-    )
-    if not interaction.output_text:
-        raise ValueError("Gemini returned an empty response.")
-    return TransactionAiAnalysis.model_validate_json(interaction.output_text)
-
-
 def build_insight_chat_input(messages: list[ChatMessage]) -> str:
     """Create a bounded, tool-first prompt for AI INSIGHT."""
     conversation = "\n".join(
@@ -231,8 +205,16 @@ def build_insight_chat_input(messages: list[ChatMessage]) -> str:
 використовуй all. Після tool-виклику використовуй лише перевірені факти з його
 результату: не вигадуй суми, категорії, дати чи операції.
 
-Ти можеш тільки аналізувати. Не додавай і не видаляй операції, не змінюй суми
-чи категорії, не виконуй SQL і не запитуй доступ до .env.
+Якщо користувач прямо просить додати нарахування або списання кредитів Intima,
+виклич prepare_credit_transaction лише коли відомі type, amount, category і
+date. Сьогоднішня дата: {date.today().isoformat()}. Це створює лише pending
+action, а не операцію в ledger. Якщо будь-якого поля бракує — постав одне
+коротке уточнювальне питання й не викликай tool.
+
+Ніколи не виконуй дію самостійно: не додавай і не видаляй операції, не змінюй
+суми чи категорії, не виконуй SQL і не запитуй доступ до .env. Після створення
+pending action повідом користувача, що він або вона має перевірити картку й
+явно підтвердити або скасувати дію.
 
 Історія поточного діалогу:
 {conversation}
@@ -245,7 +227,7 @@ def create_insight_chat_interaction(api_key: str, messages: list[ChatMessage]):
     interaction = client.interactions.create(
         model=GEMINI_MODEL,
         input=build_insight_chat_input(messages),
-        tools=GEMINI_INSIGHT_TOOLS,
+        tools=GEMINI_INSIGHT_TOOLS + CONTROLLED_ACTION_TOOLS,
         store=False,
     )
     return client, interaction
@@ -268,8 +250,10 @@ def write_insight_answer_from_tool_results(
     )
 
 
-async def generate_insight_chat_answer(messages: list[ChatMessage]) -> str:
-    """Run Gemini -> allow-listed tool -> Gemini, with no write access."""
+async def generate_insight_chat_answer(
+    messages: list[ChatMessage], thread_id: str
+) -> dict[str, object]:
+    """Run Gemini tools; only a pending action may be written before confirm."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY is not configured.")
@@ -283,17 +267,24 @@ async def generate_insight_chat_answer(messages: list[ChatMessage]) -> str:
     if not tool_calls:
         if not interaction.output_text:
             raise ValueError("Gemini returned an empty chat response.")
-        return interaction.output_text.strip()
+        return {"answer": interaction.output_text.strip(), "pending_action": None}
 
     tool_outputs: list[dict[str, object]] = []
+    pending_action: dict[str, object] | None = None
     for tool_call in tool_calls:
         arguments = getattr(tool_call, "arguments", None)
         if not isinstance(arguments, dict):
             arguments = {}
         try:
-            result = await execute_insight_tool(session_factory, tool_call.name, arguments)
+            if tool_call.name == "prepare_credit_transaction":
+                result = await prepare_credit_transaction(session_factory, thread_id, arguments)
+                action = result.get("pending_action")
+                if isinstance(action, dict):
+                    pending_action = action
+            else:
+                result = await execute_insight_tool(session_factory, tool_call.name, arguments)
         except (TypeError, ValueError):
-            result = {"error": "Не вдалося безпечно прочитати дані кредитів."}
+            result = {"error": "Не вдалося безпечно підготувати або прочитати дані кредитів."}
         tool_outputs.append({"tool": tool_call.name, "result": result})
 
     final_interaction = await asyncio.to_thread(
@@ -304,7 +295,7 @@ async def generate_insight_chat_answer(messages: list[ChatMessage]) -> str:
     )
     if not final_interaction.output_text:
         raise ValueError("Gemini returned an empty chat response after tool results.")
-    return final_interaction.output_text.strip()
+    return {"answer": final_interaction.output_text.strip(), "pending_action": pending_action}
 
 
 insight_chat_graph = create_chat_graph(generate_insight_chat_answer)
@@ -387,56 +378,6 @@ async def get_summary(
     )
 
 
-@app.post(
-    "/api/ai/analyze-transactions",
-    response_model=TransactionAiAnalysis,
-)
-async def analyze_transactions(
-    session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_admin),
-) -> TransactionAiAnalysis:
-    """Analyze Intima credit operations with Gemini on the backend only."""
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="GEMINI_API_KEY is not configured on the server.",
-        )
-
-    result = await session.execute(
-        select(CreditTransaction).order_by(
-            CreditTransaction.occurred_on.desc(), CreditTransaction.id.desc()
-        )
-    )
-    transactions = list(result.scalars())
-
-    try:
-        analysis = await asyncio.to_thread(
-            generate_transaction_analysis,
-            api_key,
-            transactions,
-        )
-        return validate_analysis(analysis, transactions)
-    except ValueError:
-        logger.warning("Gemini returned an invalid transaction analysis.")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="AI returned an invalid analysis. Please try again.",
-        ) from None
-    except Exception as error:
-        if is_gemini_rate_limit_error(error):
-            logger.warning("Gemini transaction analysis rate limit reached.")
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=GEMINI_RATE_LIMIT_MESSAGE,
-            ) from None
-        logger.error("Gemini transaction analysis failed: %s", type(error).__name__)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="AI analysis is temporarily unavailable. Please try again.",
-        ) from None
-
-
 @app.post("/api/ai/chat", response_model=AiChatResponse)
 async def chat_with_ai_insight(
     payload: AiChatRequest,
@@ -452,10 +393,19 @@ async def chat_with_ai_insight(
     thread_id = payload.thread_id or uuid4().hex
     try:
         result = await insight_chat_graph.ainvoke(
-            {"messages": [{"role": "user", "content": payload.message}], "answer": ""},
+            {
+                "messages": [{"role": "user", "content": payload.message}],
+                "answer": "",
+                "pending_action": None,
+                "thread_id": thread_id,
+            },
             config={"configurable": {"thread_id": thread_id}},
         )
-        return AiChatResponse(answer=result["answer"], thread_id=thread_id)
+        return AiChatResponse(
+            answer=result["answer"],
+            thread_id=thread_id,
+            pending_action=result.get("pending_action"),
+        )
     except ValueError:
         logger.warning("AI INSIGHT chat returned an invalid response.")
         raise HTTPException(
@@ -474,3 +424,70 @@ async def chat_with_ai_insight(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI INSIGHT is temporarily unavailable. Please try again.",
         ) from None
+
+
+async def get_pending_action_or_404(
+    session: AsyncSession, action_id: str
+) -> PendingAiAction:
+    action = await session.get(PendingAiAction, action_id)
+    if action is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending action not found.")
+    return action
+
+
+def pending_action_response(action: PendingAiAction) -> PendingActionResponse:
+    return PendingActionResponse.model_validate(serialize_pending_action(action))
+
+
+@app.post(
+    "/api/ai/actions/{action_id}/confirm",
+    response_model=ActionConfirmationResponse,
+)
+async def confirm_ai_action(
+    action_id: str,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_admin),
+) -> ActionConfirmationResponse:
+    """Execute one validated pending action after explicit admin confirmation."""
+    action = await get_pending_action_or_404(session, action_id)
+    if action.status != PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only pending actions can be confirmed.",
+        )
+    if action.action_type != CREATE_CREDIT_TRANSACTION:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Action is not allowed.")
+
+    try:
+        transaction = await confirm_credit_transaction(session, action)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Pending action payload is invalid and was marked as failed.",
+        ) from None
+    await session.refresh(action)
+    return ActionConfirmationResponse(
+        action=pending_action_response(action),
+        transaction=serialize_transaction(transaction),
+    )
+
+
+@app.post(
+    "/api/ai/actions/{action_id}/cancel",
+    response_model=PendingActionResponse,
+)
+async def cancel_ai_action(
+    action_id: str,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_admin),
+) -> PendingActionResponse:
+    """Cancel a pending action without changing the Intima credits ledger."""
+    action = await get_pending_action_or_404(session, action_id)
+    if action.status != PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only pending actions can be cancelled.",
+        )
+    await cancel_pending_action(session, action)
+    await session.refresh(action)
+    return pending_action_response(action)

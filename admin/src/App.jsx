@@ -61,13 +61,13 @@ export default function App() {
   const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState(null);
   const [formError, setFormError] = useState(null);
-  const [analysis, setAnalysis] = useState(null);
-  const [analysisLoading, setAnalysisLoading] = useState(false);
-  const [analysisError, setAnalysisError] = useState(null);
   const [insightChatMessages, setInsightChatMessages] = useState([]);
   const [insightChatInput, setInsightChatInput] = useState("");
   const [insightChatLoading, setInsightChatLoading] = useState(false);
   const [insightChatError, setInsightChatError] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null);
+  const [actionProcessing, setActionProcessing] = useState(false);
+  const [pendingActionError, setPendingActionError] = useState(null);
   const [insightChatThreadId, setInsightChatThreadId] = useState(
     () => window.sessionStorage.getItem(insightChatThreadStorageKey) || "",
   );
@@ -221,30 +221,6 @@ export default function App() {
     }
   }
 
-  async function handleAnalyzeTransactions() {
-    if (analysisLoading) {
-      return;
-    }
-
-    setAnalysisLoading(true);
-    setAnalysisError(null);
-    try {
-      const result = await fetchJson("/api/ai/analyze-transactions", {
-        method: "POST",
-        headers: { "X-Admin-Password": accessPassword },
-      });
-      setAnalysis(result);
-    } catch (error) {
-      setAnalysisError(
-        error?.status === 429
-          ? error.message
-          : "Не вдалося виконати AI-аналіз. Переконайтеся, що Gemini API доступний, і спробуйте ще раз.",
-      );
-    } finally {
-      setAnalysisLoading(false);
-    }
-  }
-
   async function handleInsightChatSubmit(event) {
     event.preventDefault();
     const message = insightChatInput.trim();
@@ -268,6 +244,10 @@ export default function App() {
       setInsightChatThreadId(result.thread_id);
       window.sessionStorage.setItem(insightChatThreadStorageKey, result.thread_id);
       setInsightChatMessages((current) => [...current, { role: "assistant", content: result.answer }]);
+      if (result.pending_action) {
+        setPendingAction(result.pending_action);
+        setPendingActionError(null);
+      }
     } catch (error) {
       setInsightChatError(
         error?.status === 429
@@ -285,6 +265,60 @@ export default function App() {
     setInsightChatMessages([]);
     setInsightChatInput("");
     setInsightChatError(null);
+  }
+
+  async function handleConfirmPendingAction() {
+    if (!pendingAction || actionProcessing) {
+      return;
+    }
+
+    setActionProcessing(true);
+    setPendingActionError(null);
+    try {
+      const result = await fetchJson(`/api/ai/actions/${pendingAction.id}/confirm`, {
+        method: "POST",
+        headers: { "X-Admin-Password": accessPassword },
+      });
+      setPendingAction(null);
+      setInsightChatMessages((current) => [
+        ...current,
+        { role: "assistant", content: "✅ Дію підтверджено. Ledger кредитів оновлено." },
+      ]);
+      await loadDashboard();
+      return result;
+    } catch (requestError) {
+      setPendingActionError(
+        requestError.message || "Не вдалося підтвердити запропоновану дію.",
+      );
+    } finally {
+      setActionProcessing(false);
+    }
+  }
+
+  async function handleCancelPendingAction() {
+    if (!pendingAction || actionProcessing) {
+      return;
+    }
+
+    setActionProcessing(true);
+    setPendingActionError(null);
+    try {
+      await fetchJson(`/api/ai/actions/${pendingAction.id}/cancel`, {
+        method: "POST",
+        headers: { "X-Admin-Password": accessPassword },
+      });
+      setPendingAction(null);
+      setInsightChatMessages((current) => [
+        ...current,
+        { role: "assistant", content: "Дію скасовано. Ledger кредитів не змінювався." },
+      ]);
+    } catch (requestError) {
+      setPendingActionError(
+        requestError.message || "Не вдалося скасувати запропоновану дію.",
+      );
+    } finally {
+      setActionProcessing(false);
+    }
   }
 
   if (!accessPassword) {
@@ -387,6 +421,56 @@ export default function App() {
 
         {insightChatError && <p className="chat-error" role="alert">{insightChatError}</p>}
 
+        {pendingAction?.status === "pending" && (
+          <section className="pending-action-card" aria-labelledby="pending-action-heading">
+            <div>
+              <p className="eyebrow">ПОТРІБНЕ ПІДТВЕРДЖЕННЯ · 🛡️</p>
+              <h3 id="pending-action-heading">Запропонована дія</h3>
+            </div>
+            <dl className="pending-action-details">
+              <div>
+                <dt>Тип</dt>
+                <dd>{pendingAction.payload.type === "expense" ? "Списання кредитів" : "Нарахування кредитів"}</dd>
+              </div>
+              <div>
+                <dt>Кредити</dt>
+                <dd>{formatCredits(pendingAction.payload.amount)}</dd>
+              </div>
+              <div>
+                <dt>Категорія</dt>
+                <dd>{pendingAction.payload.category}</dd>
+              </div>
+              <div>
+                <dt>Дата</dt>
+                <dd>{formatDate(pendingAction.payload.date)}</dd>
+              </div>
+              <div className="pending-action-description">
+                <dt>Опис</dt>
+                <dd>{pendingAction.payload.description || "—"}</dd>
+              </div>
+            </dl>
+            {pendingActionError && <p className="pending-action-error" role="alert">{pendingActionError}</p>}
+            <div className="pending-action-buttons">
+              <button
+                className="confirm-action-button"
+                disabled={actionProcessing}
+                onClick={handleConfirmPendingAction}
+                type="button"
+              >
+                {actionProcessing ? "Обробляємо…" : "✓ Підтвердити"}
+              </button>
+              <button
+                className="cancel-action-button"
+                disabled={actionProcessing}
+                onClick={handleCancelPendingAction}
+                type="button"
+              >
+                Скасувати
+              </button>
+            </div>
+          </section>
+        )}
+
         <form className="chat-form" onSubmit={handleInsightChatSubmit}>
           <label className="visually-hidden" htmlFor="ai-insight-chat-input">Запит до AI INSIGHT</label>
           <textarea
@@ -405,89 +489,8 @@ export default function App() {
           <button onClick={() => setInsightChatInput("Який поточний баланс кредитів?")} type="button">💜 Баланс</button>
           <button onClick={() => setInsightChatInput("Покажи найбільші списання")} type="button">🌿 Списання</button>
           <button onClick={() => setInsightChatInput("На що витратили найбільше кредитів?")} type="button">📊 Категорії</button>
+          <button onClick={() => setInsightChatInput("Списати 3 кредити за AI-сесію сьогодні")} type="button">🛡️ Підготувати списання</button>
         </div>
-      </section>
-
-      <section className="ai-analysis-section" aria-labelledby="ai-analysis-heading">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">AI INSIGHT · ✨</p>
-            <h2 id="ai-analysis-heading">Аналіз кредитів Intima</h2>
-            <p className="analysis-intro">
-              Gemini аналізує поточний ledger лише за вашим запитом і не змінює операції.
-            </p>
-          </div>
-          <button
-            className="analysis-button"
-            disabled={analysisLoading}
-            onClick={handleAnalyzeTransactions}
-            type="button"
-          >
-            {analysisLoading ? "Аналізуємо…" : "✨ Запустити AI-аналіз"}
-          </button>
-        </div>
-
-        {analysisLoading && (
-          <p className="analysis-loading" role="status">
-            Gemini читає узагальнені дані ledger і формує висновок…
-          </p>
-        )}
-
-        {analysisError && (
-          <div className="analysis-error" role="alert">
-            <p>{analysisError}</p>
-            <button onClick={handleAnalyzeTransactions} type="button">Спробувати ще раз</button>
-          </div>
-        )}
-
-        {analysis && !analysisLoading && (
-          <div className="analysis-results">
-            <article className="analysis-summary-card">
-              <p className="eyebrow">ВИСНОВОК · 💜</p>
-              <p>{analysis.summary}</p>
-            </article>
-
-            <div className="analysis-detail-grid">
-              <article className="analysis-detail-card">
-                <h3>🌿 Основні списання</h3>
-                {analysis.top_expense_categories.length === 0 ? (
-                  <p>Даних про списання поки недостатньо.</p>
-                ) : (
-                  <ul className="analysis-category-list">
-                    {analysis.top_expense_categories.map((item) => (
-                      <li key={item.category}>
-                        <span>{item.category}</span>
-                        <strong>{formatCredits(item.amount)} кредитів</strong>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </article>
-
-              <article className="analysis-detail-card risk-card">
-                <h3>⚠️ Можливі ризики</h3>
-                {analysis.risks.length === 0 ? (
-                  <p>Явних ризиків у наявних даних не виявлено.</p>
-                ) : (
-                  <ul className="analysis-text-list">
-                    {analysis.risks.map((risk) => <li key={risk}>{risk}</li>)}
-                  </ul>
-                )}
-              </article>
-
-              <article className="analysis-detail-card advice-card">
-                <h3>🫶 Практичні поради</h3>
-                {analysis.advice.length === 0 ? (
-                  <p>Поки немає окремих рекомендацій.</p>
-                ) : (
-                  <ul className="analysis-text-list">
-                    {analysis.advice.map((advice) => <li key={advice}>{advice}</li>)}
-                  </ul>
-                )}
-              </article>
-            </div>
-          </div>
-        )}
       </section>
 
       <section className="transaction-form-section">

@@ -9,14 +9,22 @@ from app.chat_tools import GEMINI_INSIGHT_TOOLS, normalize_period, period_bounds
 
 class ChatMemoryTests(unittest.TestCase):
     def test_thread_keeps_context_between_messages(self) -> None:
-        async def answer_builder(messages):
-            return f"Контекст: {messages[-1]['content']}"
+        async def answer_builder(messages, thread_id):
+            return {
+                "answer": f"Контекст: {messages[-1]['content']}",
+                "pending_action": None,
+            }
 
         async def scenario():
             graph = create_chat_graph(answer_builder)
             config = {"configurable": {"thread_id": "test-thread"}}
             await graph.ainvoke(
-                {"messages": [{"role": "user", "content": "Який баланс?"}], "answer": ""},
+                {
+                    "messages": [{"role": "user", "content": "Який баланс?"}],
+                    "answer": "",
+                    "pending_action": None,
+                    "thread_id": "test-thread",
+                },
                 config=config,
             )
             return await graph.ainvoke(
