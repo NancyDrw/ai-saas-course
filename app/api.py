@@ -7,7 +7,6 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -36,7 +35,6 @@ from .ai_actions import (
 from .chat_memory import ChatMessage, create_chat_graph
 from .chat_tools import GEMINI_INSIGHT_TOOLS, execute_insight_tool
 from .database import Base, CreditTransaction, PendingAiAction, create_database_engine
-from .prompts import build_transaction_analysis_prompt
 
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -93,18 +91,6 @@ class SummaryResponse(BaseModel):
 
 class AdminAccessResponse(BaseModel):
     authorized: bool
-
-
-class ExpenseCategoryAnalysis(BaseModel):
-    category: str = Field(min_length=1, max_length=100)
-    amount: Decimal = Field(ge=0)
-
-
-class TransactionAiAnalysis(BaseModel):
-    summary: str = Field(min_length=1, max_length=600)
-    top_expense_categories: list[ExpenseCategoryAnalysis] = Field(max_length=5)
-    risks: list[str] = Field(max_length=5)
-    advice: list[str] = Field(max_length=5)
 
 
 class AiChatRequest(BaseModel):
@@ -202,45 +188,6 @@ def serialize_transaction(transaction: CreditTransaction) -> TransactionResponse
 def is_gemini_rate_limit_error(error: Exception) -> bool:
     """Recognize the SDK's rate-limit response without returning internals."""
     return type(error).__name__ == "RateLimitError" or getattr(error, "status_code", None) == 429
-
-
-def validate_analysis(
-    analysis: TransactionAiAnalysis,
-    transactions: list[CreditTransaction],
-) -> TransactionAiAnalysis:
-    """Reject categories or sums that do not exactly match the credit ledger."""
-    expense_totals: defaultdict[str, Decimal] = defaultdict(lambda: Decimal("0"))
-    for transaction in transactions:
-        if transaction.transaction_type == "expense":
-            expense_totals[transaction.category] += transaction.amount
-
-    for category in analysis.top_expense_categories:
-        if category.category not in expense_totals:
-            raise ValueError("The AI returned an unknown expense category.")
-        if category.amount != expense_totals[category.category]:
-            raise ValueError("The AI returned an incorrect expense amount.")
-
-    return analysis
-
-
-def generate_transaction_analysis(
-    api_key: str,
-    transactions: list[CreditTransaction],
-) -> TransactionAiAnalysis:
-    """Call Gemini synchronously; the API route runs this function in a thread."""
-    client = genai.Client(api_key=api_key)
-    interaction = client.interactions.create(
-        model=GEMINI_MODEL,
-        input=build_transaction_analysis_prompt(transactions),
-        response_format={
-            "type": "text",
-            "mime_type": "application/json",
-            "schema": TransactionAiAnalysis.model_json_schema(),
-        },
-    )
-    if not interaction.output_text:
-        raise ValueError("Gemini returned an empty response.")
-    return TransactionAiAnalysis.model_validate_json(interaction.output_text)
 
 
 def build_insight_chat_input(messages: list[ChatMessage]) -> str:
@@ -429,56 +376,6 @@ async def get_summary(
         total_expense=total_expense,
         balance=total_income - total_expense,
     )
-
-
-@app.post(
-    "/api/ai/analyze-transactions",
-    response_model=TransactionAiAnalysis,
-)
-async def analyze_transactions(
-    session: AsyncSession = Depends(get_session),
-    _: None = Depends(require_admin),
-) -> TransactionAiAnalysis:
-    """Analyze Intima credit operations with Gemini on the backend only."""
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="GEMINI_API_KEY is not configured on the server.",
-        )
-
-    result = await session.execute(
-        select(CreditTransaction).order_by(
-            CreditTransaction.occurred_on.desc(), CreditTransaction.id.desc()
-        )
-    )
-    transactions = list(result.scalars())
-
-    try:
-        analysis = await asyncio.to_thread(
-            generate_transaction_analysis,
-            api_key,
-            transactions,
-        )
-        return validate_analysis(analysis, transactions)
-    except ValueError:
-        logger.warning("Gemini returned an invalid transaction analysis.")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="AI returned an invalid analysis. Please try again.",
-        ) from None
-    except Exception as error:
-        if is_gemini_rate_limit_error(error):
-            logger.warning("Gemini transaction analysis rate limit reached.")
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=GEMINI_RATE_LIMIT_MESSAGE,
-            ) from None
-        logger.error("Gemini transaction analysis failed: %s", type(error).__name__)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="AI analysis is temporarily unavailable. Please try again.",
-        ) from None
 
 
 @app.post("/api/ai/chat", response_model=AiChatResponse)
