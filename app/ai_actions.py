@@ -127,6 +127,8 @@ async def prepare_credit_transaction(
             status=PENDING,
         )
         session.add(action)
+        # Make the pending row visible before its audit event references it.
+        await session.flush()
         session.add(
             AiActionAuditLog(
                 action_id=action.id,
