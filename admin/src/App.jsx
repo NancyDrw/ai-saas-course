@@ -20,9 +20,11 @@ const filters = [
 ];
 
 const insightChatThreadStorageKey = "ai-insight-chat-thread";
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+const publicCabinetMode = new URLSearchParams(window.location.search).get("view") === "cabinet";
 
 async function fetchJson(path, options = {}) {
-  const response = await fetch(path, options);
+  const response = await fetch(`${apiBaseUrl}${path}`, { credentials: "include", ...options });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     const error = new Error(body?.detail || `API returned ${response.status}`);
@@ -50,6 +52,10 @@ export default function App() {
   const [passwordInput, setPasswordInput] = useState("");
   const [accessError, setAccessError] = useState(null);
   const [authorizing, setAuthorizing] = useState(false);
+  const [telegramIdInput, setTelegramIdInput] = useState("");
+  const [selectedIdentity, setSelectedIdentity] = useState(null);
+  const [identityError, setIdentityError] = useState(null);
+  const [selectingIdentity, setSelectingIdentity] = useState(false);
   const [summary, setSummary] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [form, setForm] = useState(emptyTransaction);
@@ -68,18 +74,46 @@ export default function App() {
   const [pendingAction, setPendingAction] = useState(null);
   const [actionProcessing, setActionProcessing] = useState(false);
   const [pendingActionError, setPendingActionError] = useState(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [telegramUser, setTelegramUser] = useState(null);
+  const [telegramAuthError, setTelegramAuthError] = useState(null);
+  const [telegramAuthLoading, setTelegramAuthLoading] = useState(publicCabinetMode);
   const [insightChatThreadId, setInsightChatThreadId] = useState(
     () => window.sessionStorage.getItem(insightChatThreadStorageKey) || "",
   );
+
+  useEffect(() => {
+    if (!publicCabinetMode) {
+      return;
+    }
+    const webApp = window.Telegram?.WebApp;
+    if (!webApp?.initData) {
+      setTelegramAuthError("Відкрийте особистий кабінет кнопкою в Telegram-боті Intima.");
+      setTelegramAuthLoading(false);
+      return;
+    }
+
+    webApp.ready();
+    webApp.expand();
+    fetchJson("/api/auth/telegram", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ init_data: webApp.initData }),
+    })
+      .then(setTelegramUser)
+      .catch(() => setTelegramAuthError("Не вдалося безпечно підтвердити Telegram-профіль. Відкрийте кабінет ще раз через бота."))
+      .finally(() => setTelegramAuthLoading(false));
+  }, []);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
+      const identityQuery = selectedIdentity ? `?telegram_id=${encodeURIComponent(selectedIdentity.telegram_id)}` : "";
       const [summaryData, transactionData] = await Promise.all([
-        fetchJson("/api/summary", { headers: { "X-Admin-Password": accessPassword } }),
-        fetchJson("/api/transactions", { headers: { "X-Admin-Password": accessPassword } }),
+        fetchJson(`/api/summary${identityQuery}`, { headers: { "X-Admin-Password": accessPassword } }),
+        fetchJson(`/api/transactions${identityQuery}`, { headers: { "X-Admin-Password": accessPassword } }),
       ]);
       setSummary(summaryData);
       setTransactions(transactionData);
@@ -90,7 +124,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [accessPassword]);
+  }, [accessPassword, selectedIdentity]);
 
   useEffect(() => {
     if (accessPassword) {
@@ -160,6 +194,30 @@ export default function App() {
     }
   }
 
+  async function handleIdentitySelection(event) {
+    event.preventDefault();
+    const telegramId = telegramIdInput.trim();
+    if (!/^\d+$/.test(telegramId) || Number(telegramId) <= 0) {
+      setIdentityError("Введіть коректний числовий Telegram ID.");
+      return;
+    }
+    setSelectingIdentity(true);
+    setIdentityError(null);
+    try {
+      const identity = await fetchJson(`/api/identities/telegram/${telegramId}`, {
+        headers: { "X-Admin-Password": accessPassword },
+      });
+      setSelectedIdentity(identity);
+      setInsightChatThreadId("");
+      setInsightChatMessages([]);
+      setPendingAction(null);
+    } catch (requestError) {
+      setIdentityError(requestError.message || "Не вдалося знайти профіль.");
+    } finally {
+      setSelectingIdentity(false);
+    }
+  }
+
   function handleChange(event) {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value }));
@@ -187,7 +245,7 @@ export default function App() {
           "Content-Type": "application/json",
           "X-Admin-Password": accessPassword,
         },
-        body: JSON.stringify({ ...form, amount }),
+        body: JSON.stringify({ ...form, amount, telegram_id: selectedIdentity?.telegram_id }),
       });
       setForm(emptyTransaction());
       setFormOpen(false);
@@ -209,7 +267,8 @@ export default function App() {
     setDeletingId(transaction.id);
     setError(null);
     try {
-      await fetchJson(`/api/transactions/${transaction.id}`, {
+      const identityQuery = selectedIdentity ? `?telegram_id=${selectedIdentity.telegram_id}` : "";
+      await fetchJson(`/api/transactions/${transaction.id}${identityQuery}`, {
         method: "DELETE",
         headers: { "X-Admin-Password": accessPassword },
       });
@@ -239,7 +298,11 @@ export default function App() {
           "Content-Type": "application/json",
           "X-Admin-Password": accessPassword,
         },
-        body: JSON.stringify({ message, thread_id: insightChatThreadId || undefined }),
+        body: JSON.stringify({
+          message,
+          telegram_id: selectedIdentity?.telegram_id,
+          thread_id: insightChatThreadId || undefined,
+        }),
       });
       setInsightChatThreadId(result.thread_id);
       window.sessionStorage.setItem(insightChatThreadStorageKey, result.thread_id);
@@ -247,6 +310,7 @@ export default function App() {
       if (result.pending_action) {
         setPendingAction(result.pending_action);
         setPendingActionError(null);
+        setIsChatOpen(true);
       }
     } catch (error) {
       setInsightChatError(
@@ -277,7 +341,8 @@ export default function App() {
     try {
       const result = await fetchJson(`/api/ai/actions/${pendingAction.id}/confirm`, {
         method: "POST",
-        headers: { "X-Admin-Password": accessPassword },
+        headers: { "Content-Type": "application/json", "X-Admin-Password": accessPassword },
+        body: JSON.stringify({ telegram_id: selectedIdentity?.telegram_id }),
       });
       setPendingAction(null);
       setInsightChatMessages((current) => [
@@ -305,7 +370,8 @@ export default function App() {
     try {
       await fetchJson(`/api/ai/actions/${pendingAction.id}/cancel`, {
         method: "POST",
-        headers: { "X-Admin-Password": accessPassword },
+        headers: { "Content-Type": "application/json", "X-Admin-Password": accessPassword },
+        body: JSON.stringify({ telegram_id: selectedIdentity?.telegram_id }),
       });
       setPendingAction(null);
       setInsightChatMessages((current) => [
@@ -319,6 +385,37 @@ export default function App() {
     } finally {
       setActionProcessing(false);
     }
+  }
+
+  async function handleTelegramLogout() {
+    await fetchJson("/api/auth/logout", { method: "POST" }).catch(() => null);
+    window.Telegram?.WebApp?.close();
+  }
+
+  if (publicCabinetMode) {
+    return (
+      <main className="public-cabinet">
+        <section className="public-cabinet-card">
+          <p className="eyebrow">INTIMA · ОСОБИСТИЙ КАБІНЕТ</p>
+          <span className="cabinet-flower" aria-hidden="true">🌿</span>
+          <h1>Простір для близькості</h1>
+          {telegramAuthLoading && <p className="subtitle">Безпечно підтверджуємо ваш Telegram-профіль…</p>}
+          {telegramAuthError && <p className="form-error" role="alert">{telegramAuthError}</p>}
+          {telegramUser && (
+            <>
+              <p className="subtitle">
+                Вітаємо, {telegramUser.first_name || telegramUser.username || "друже"}. Ваш профіль Intima підтверджено через Telegram.
+              </p>
+              <div className="cabinet-next-steps">
+                <p>Незабаром тут з’являться ваші картки, вправи, check-in та спільний простір пари.</p>
+                <p>Ми не показуємо чужі дані й не просимо вводити Telegram ID вручну.</p>
+              </div>
+              <button className="logout-button" onClick={handleTelegramLogout} type="button">Закрити кабінет</button>
+            </>
+          )}
+        </section>
+      </main>
+    );
   }
 
   if (!accessPassword) {
@@ -353,18 +450,61 @@ export default function App() {
       <header className="hero">
         <div>
           <p className="eyebrow">INTIMA · ADMIN</p>
-          <h1>Кредити Intima <span className="title-heart">♥</span></h1>
+          <h1>Огляд Intima <span className="title-heart">♥</span></h1>
           <p className="subtitle">
-            Керуйте нарахуваннями та списаннями кредитів для турботливих сервісів Intima.
+            Кредити, взаємодії та корисні сервіси для близькості у парі.
           </p>
         </div>
         <div className="header-actions">
-          <button className="logout-button" onClick={() => setAccessPassword("")}>Вийти</button>
+          <form className="identity-picker" onSubmit={handleIdentitySelection}>
+            <label>
+              <span>Telegram ID</span>
+              <input
+                inputMode="numeric"
+                onChange={(event) => setTelegramIdInput(event.target.value)}
+                placeholder="ID користувача"
+                value={telegramIdInput}
+              />
+            </label>
+            <button className="identity-submit" disabled={selectingIdentity} type="submit">
+              {selectingIdentity ? "Шукаємо…" : "Показати"}
+            </button>
+          </form>
+          <button className="add-operation-button" onClick={() => setFormOpen(true)} type="button">
+            ＋ Додати операцію
+          </button>
+          <button className="insight-trigger" onClick={() => setIsChatOpen((open) => !open)} type="button">
+            ✨ AI INSIGHT
+          </button>
+          <button className="logout-button" onClick={() => {
+            setAccessPassword("");
+            setSelectedIdentity(null);
+            setTelegramIdInput("");
+          }}>Вийти</button>
           <button className="refresh-button" onClick={loadDashboard} disabled={loading}>
             {loading ? "Оновлюємо…" : "Оновити"}
           </button>
         </div>
       </header>
+
+      {identityError && <p className="identity-error" role="alert">{identityError}</p>}
+      {selectedIdentity && (
+        <section className="selected-profile" aria-label="Обраний профіль">
+          <span>🌿</span>
+          <p>
+            Показано дані: <strong>{selectedIdentity.first_name || selectedIdentity.username || "користувач"}</strong>
+            {" · "}Telegram ID {selectedIdentity.telegram_id}
+            {selectedIdentity.couples.length > 0 && ` · ${selectedIdentity.couples.length} профіль(і) пари`}
+          </p>
+          <button onClick={() => {
+            setSelectedIdentity(null);
+            setTelegramIdInput("");
+            setInsightChatThreadId("");
+            setInsightChatMessages([]);
+            setPendingAction(null);
+          }} type="button">Показати всі дані</button>
+        </section>
+      )}
 
       {error && (
         <section className="error-state" role="alert">
@@ -383,18 +523,21 @@ export default function App() {
         ))}
       </section>
 
-      <section className="ai-chat-section" aria-labelledby="ai-insight-chat-heading">
+      <section className={`ai-chat-section ${isChatOpen ? "open" : ""}`} aria-labelledby="ai-insight-chat-heading">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">AI INSIGHT CHAT · ✨</p>
+            <p className="eyebrow">AI INSIGHT · ✨</p>
             <h2 id="ai-insight-chat-heading">Помічник з кредитів Intima</h2>
             <p className="chat-intro">
-              Запитайте про баланс, списання, категорії витрат або конкретний місяць. AI лише читає дані та нічого не змінює.
+              Поставте запитання про баланс, списання або категорії. Зміни готуються лише після вашого підтвердження.
             </p>
           </div>
-          <button className="new-chat-button" onClick={startNewInsightChat} type="button">
-            Новий діалог
-          </button>
+          <div className="chat-header-actions">
+            {isChatOpen && <button className="new-chat-button" onClick={startNewInsightChat} type="button">Новий діалог</button>}
+            <button className="chat-panel-toggle" onClick={() => setIsChatOpen((open) => !open)} type="button">
+              {isChatOpen ? "Згорнути" : "Відкрити чат"}
+            </button>
+          </div>
         </div>
 
         <div className="chat-history" aria-live="polite">
@@ -540,6 +683,7 @@ export default function App() {
         </form>}
       </section>
 
+      <div className="overview-grid">
       <section className="activity-section">
         <div className="section-heading">
           <div>
@@ -605,15 +749,7 @@ export default function App() {
         )}
       </section>
 
-      <section className="insights-grid" aria-label="Статистика кредитів">
-        <article className="insight-card">
-          <p className="eyebrow">СТАТИСТИКА</p>
-          <h2>{transactions.length} операцій</h2>
-          <p className="insight-copy">
-            {categories.length} {categories.length === 1 ? "категорія" : "категорій"} у ledger кредитів Intima.
-          </p>
-        </article>
-        <article className="expense-structure">
+      <section className="expense-structure" aria-label="Структура списань">
           <div className="section-heading">
             <div>
               <p className="eyebrow">СТРУКТУРА СПИСАНЬ</p>
@@ -637,8 +773,8 @@ export default function App() {
               ))}
             </ul>
           )}
-        </article>
       </section>
+      </div>
     </main>
   );
 }

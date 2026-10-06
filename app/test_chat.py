@@ -9,7 +9,7 @@ from app.chat_tools import GEMINI_INSIGHT_TOOLS, normalize_period, period_bounds
 
 class ChatMemoryTests(unittest.TestCase):
     def test_thread_keeps_context_between_messages(self) -> None:
-        async def answer_builder(messages, thread_id):
+        async def answer_builder(messages, thread_id, user_id):
             return {
                 "answer": f"Контекст: {messages[-1]['content']}",
                 "pending_action": None,
@@ -24,6 +24,7 @@ class ChatMemoryTests(unittest.TestCase):
                     "answer": "",
                     "pending_action": None,
                     "thread_id": "test-thread",
+                    "user_id": None,
                 },
                 config=config,
             )

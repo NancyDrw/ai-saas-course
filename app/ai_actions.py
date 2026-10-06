@@ -99,6 +99,7 @@ def serialize_pending_action(action: PendingAiAction) -> dict[str, object]:
 async def prepare_credit_transaction(
     session_factory: async_sessionmaker[AsyncSession],
     thread_id: str,
+    user_id: int | None,
     arguments: dict[str, object],
 ) -> dict[str, object]:
     """Persist a validated pending action, never a ledger transaction itself."""
@@ -110,6 +111,7 @@ async def prepare_credit_transaction(
             select(PendingAiAction)
             .where(
                 PendingAiAction.thread_id == thread_id,
+                PendingAiAction.user_id == user_id,
                 PendingAiAction.action_type == CREATE_CREDIT_TRANSACTION,
                 PendingAiAction.status == PENDING,
             )
@@ -121,6 +123,7 @@ async def prepare_credit_transaction(
 
         action = PendingAiAction(
             id=uuid4().hex,
+            user_id=user_id,
             thread_id=thread_id,
             action_type=CREATE_CREDIT_TRANSACTION,
             payload=serialized_payload,
@@ -132,6 +135,7 @@ async def prepare_credit_transaction(
         session.add(
             AiActionAuditLog(
                 action_id=action.id,
+                user_id=user_id,
                 thread_id=thread_id,
                 action_type=CREATE_CREDIT_TRANSACTION,
                 event="created",
@@ -155,6 +159,7 @@ async def confirm_credit_transaction(
         session.add(
             AiActionAuditLog(
                 action_id=action.id,
+                user_id=action.user_id,
                 thread_id=action.thread_id,
                 action_type=action.action_type,
                 event=FAILED,
@@ -165,6 +170,7 @@ async def confirm_credit_transaction(
         raise ValueError("Pending action payload is invalid.") from error
 
     transaction = CreditTransaction(
+        user_id=action.user_id,
         transaction_type=payload.type,
         amount=payload.amount,
         category=payload.category,
@@ -177,6 +183,7 @@ async def confirm_credit_transaction(
     session.add(
         AiActionAuditLog(
             action_id=action.id,
+            user_id=action.user_id,
             thread_id=action.thread_id,
             action_type=action.action_type,
             event=CONFIRMED,
@@ -195,6 +202,7 @@ async def cancel_pending_action(session: AsyncSession, action: PendingAiAction) 
     session.add(
         AiActionAuditLog(
             action_id=action.id,
+            user_id=action.user_id,
             thread_id=action.thread_id,
             action_type=action.action_type,
             event=CANCELLED,
