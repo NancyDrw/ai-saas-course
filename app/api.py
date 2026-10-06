@@ -192,6 +192,12 @@ if public_web_origin:
     )
 
 
+@app.get("/health", include_in_schema=False)
+async def health_check() -> dict[str, str]:
+    """Small unauthenticated readiness endpoint for Render health checks."""
+    return {"status": "ok"}
+
+
 async def get_session() -> AsyncIterator[AsyncSession]:
     async with session_factory() as session:
         yield session
