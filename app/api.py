@@ -19,6 +19,8 @@ from uuid import uuid4
 from dotenv import load_dotenv
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from google import genai
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
@@ -180,6 +182,10 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan,
 )
+
+# Dockerfile.render copies the Vite build here. The check keeps local API-only
+# development working, where the React app is served by Vite instead.
+frontend_dist = Path(__file__).resolve().parent.parent / "admin" / "dist"
 
 public_web_origin = os.getenv("PUBLIC_WEB_ORIGIN", "").rstrip("/")
 if public_web_origin:
@@ -721,3 +727,20 @@ async def cancel_ai_action(
     await cancel_pending_action(session, action)
     await session.refresh(action)
     return pending_action_response(action)
+
+
+if frontend_dist.is_dir():
+    frontend_assets = frontend_dist / "assets"
+    if frontend_assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=frontend_assets), name="frontend-assets")
+
+    @app.get("/{frontend_path:path}", include_in_schema=False)
+    async def serve_react_app(frontend_path: str) -> FileResponse:
+        """Serve the built React cabinet without intercepting unknown API paths."""
+        if frontend_path.startswith("api/"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
+
+        requested_file = (frontend_dist / frontend_path).resolve()
+        if frontend_path and requested_file.is_relative_to(frontend_dist.resolve()) and requested_file.is_file():
+            return FileResponse(requested_file)
+        return FileResponse(frontend_dist / "index.html")

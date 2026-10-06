@@ -1,9 +1,9 @@
 services:
   - type: web
     name: intima-api
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.api:app --host 0.0.0.0 --port $PORT
+    runtime: docker
+    dockerfilePath: ./Dockerfile.render
+    dockerContext: .
     healthCheckPath: /health
     envVars:
       - key: APP_ENV
@@ -32,13 +32,4 @@ services:
       - key: BOT_TOKEN
         sync: false
       - key: WEB_APP_URL
-        sync: false
-
-  - type: web
-    name: intima-web
-    runtime: static
-    buildCommand: cd admin && npm ci && npm run build
-    staticPublishPath: ./admin/dist
-    envVars:
-      - key: VITE_API_BASE_URL
         sync: false
