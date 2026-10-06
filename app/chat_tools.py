@@ -90,10 +90,12 @@ def format_credits(amount: Decimal) -> str:
 
 
 async def fetch_transactions(
-    session_factory: async_sessionmaker[AsyncSession], period: str
+    session_factory: async_sessionmaker[AsyncSession], user_id: int | None, period: str
 ) -> list[CreditTransaction]:
     """Use a fixed SQLAlchemy select; AI never receives raw SQL access."""
     statement = select(CreditTransaction)
+    if user_id is not None:
+        statement = statement.where(CreditTransaction.user_id == user_id)
     bounds = period_bounds(period)
     if bounds:
         statement = statement.where(CreditTransaction.occurred_on.between(*bounds))
@@ -105,11 +107,11 @@ async def fetch_transactions(
 
 
 async def get_transactions_summary(
-    session_factory: async_sessionmaker[AsyncSession], period: object
+    session_factory: async_sessionmaker[AsyncSession], user_id: int | None, period: object
 ) -> dict[str, object]:
     """Return aggregate, read-only ledger facts."""
     normalized_period = normalize_period(period)
-    transactions = await fetch_transactions(session_factory, normalized_period)
+    transactions = await fetch_transactions(session_factory, user_id, normalized_period)
     income = sum(
         (transaction.amount for transaction in transactions if transaction.transaction_type == "income"),
         Decimal("0"),
@@ -128,12 +130,12 @@ async def get_transactions_summary(
 
 
 async def get_category_totals(
-    session_factory: async_sessionmaker[AsyncSession], period: object
+    session_factory: async_sessionmaker[AsyncSession], user_id: int | None, period: object
 ) -> dict[str, object]:
     """Return read-only expense category totals."""
     normalized_period = normalize_period(period)
     totals: defaultdict[str, Decimal] = defaultdict(lambda: Decimal("0"))
-    for transaction in await fetch_transactions(session_factory, normalized_period):
+    for transaction in await fetch_transactions(session_factory, user_id, normalized_period):
         if transaction.transaction_type == "expense":
             totals[transaction.category] += transaction.amount
     return {
@@ -146,7 +148,7 @@ async def get_category_totals(
 
 
 async def get_top_expenses(
-    session_factory: async_sessionmaker[AsyncSession], period: object, limit: object
+    session_factory: async_sessionmaker[AsyncSession], user_id: int | None, period: object, limit: object
 ) -> dict[str, object]:
     """Return a maximum of five expense rows, without writing anything."""
     normalized_period = normalize_period(period)
@@ -159,7 +161,7 @@ async def get_top_expenses(
 
     expenses = [
         transaction
-        for transaction in await fetch_transactions(session_factory, normalized_period)
+        for transaction in await fetch_transactions(session_factory, user_id, normalized_period)
         if transaction.transaction_type == "expense"
     ]
     expenses.sort(key=lambda transaction: transaction.amount, reverse=True)
@@ -177,16 +179,17 @@ async def get_top_expenses(
 
 
 async def execute_insight_tool(
-    session_factory: async_sessionmaker[AsyncSession], name: str, arguments: dict[str, object]
+    session_factory: async_sessionmaker[AsyncSession], user_id: int | None, name: str, arguments: dict[str, object]
 ) -> dict[str, object]:
     """Dispatch only allow-listed, read-only functions with typed inputs."""
     if name == "get_transactions_summary":
-        return await get_transactions_summary(session_factory, arguments.get("period"))
+        return await get_transactions_summary(session_factory, user_id, arguments.get("period"))
     if name == "get_category_totals":
-        return await get_category_totals(session_factory, arguments.get("period"))
+        return await get_category_totals(session_factory, user_id, arguments.get("period"))
     if name == "get_top_expenses":
         return await get_top_expenses(
             session_factory,
+            user_id,
             arguments.get("period"),
             arguments.get("limit"),
         )

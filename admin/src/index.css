@@ -40,6 +40,45 @@ button:disabled {
   padding: 28px;
 }
 
+.public-cabinet {
+  align-items: center;
+  background: radial-gradient(circle at top, #f8eefa, #fff 60%);
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 28px;
+}
+
+.public-cabinet-card {
+  background: #fff;
+  border: 1px solid #ebe3ec;
+  border-radius: 24px;
+  box-shadow: 0 18px 44px rgb(77 51 83 / 0.12);
+  max-width: 560px;
+  padding: 42px 36px;
+  text-align: center;
+}
+
+.cabinet-flower {
+  display: block;
+  font-size: 2.4rem;
+  margin-bottom: 18px;
+}
+
+.cabinet-next-steps {
+  background: #faf5fb;
+  border-radius: 14px;
+  color: #614c67;
+  line-height: 1.55;
+  margin: 28px 0;
+  padding: 18px;
+  text-align: left;
+}
+
+.cabinet-next-steps p:last-child {
+  margin-bottom: 0;
+}
+
 .access-card {
   background: #fff;
   border: 1px solid #ebe3ec;
@@ -93,7 +132,79 @@ button:disabled {
 .header-actions {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
+  justify-content: flex-end;
+}
+
+.identity-picker {
+  align-items: end;
+  display: flex;
+  gap: 8px;
+}
+
+.identity-picker label {
+  color: #756a79;
+  display: grid;
+  font-size: 0.72rem;
+  font-weight: 750;
+  gap: 5px;
+  letter-spacing: 0.04em;
+}
+
+.identity-picker input {
+  background: #fff;
+  border: 1px solid #d9ccdd;
+  border-radius: 10px;
+  color: #33243f;
+  font: inherit;
+  font-weight: 500;
+  min-width: 135px;
+  padding: 10px 11px;
+}
+
+.identity-submit {
+  background: #fff;
+  border: 1px solid #cdb9d1;
+  color: #5b3d70;
+  font-weight: 750;
+  padding: 11px 13px;
+}
+
+.identity-submit:hover {
+  background: #f5eff6;
+}
+
+.identity-error {
+  color: #9b2648;
+  font-weight: 650;
+  margin: 14px 0 0;
+}
+
+.selected-profile {
+  align-items: center;
+  background: #f5edf6;
+  border: 1px solid #e3d7e6;
+  border-radius: 14px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-top: 20px;
+  padding: 12px 16px;
+}
+
+.selected-profile p {
+  color: #5a4a60;
+  margin: 0;
+}
+
+.selected-profile button {
+  background: transparent;
+  color: #6d4c70;
+  font-size: 0.86rem;
+  font-weight: 750;
+  padding: 8px;
+  text-decoration: underline;
 }
 
 .eyebrow {
@@ -148,6 +259,27 @@ h2 {
   font-weight: 700;
   padding: 12px 20px;
   transition: background 150ms ease;
+}
+
+.add-operation-button,
+.insight-trigger {
+  color: #fff;
+  font-weight: 750;
+  padding: 12px 17px;
+}
+
+.add-operation-button {
+  background: linear-gradient(135deg, #a75e93, #75488a);
+  box-shadow: 0 8px 18px rgb(117 72 138 / 0.2);
+}
+
+.insight-trigger {
+  background: #41314f;
+}
+
+.add-operation-button:hover,
+.insight-trigger:hover {
+  filter: brightness(0.92);
 }
 
 .logout-button {
@@ -208,6 +340,41 @@ h2 {
   border-radius: 18px;
   margin-bottom: 24px;
   padding: 26px;
+}
+
+.ai-chat-section:not(.open) > :not(.section-heading) {
+  display: none;
+}
+
+.ai-chat-section.open {
+  bottom: 24px;
+  box-shadow: 0 22px 60px rgb(50 35 61 / 0.25);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  position: fixed;
+  right: 24px;
+  width: min(500px, calc(100vw - 36px));
+  z-index: 10;
+}
+
+.chat-header-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.chat-panel-toggle {
+  background: #5b3d70;
+  color: #fff;
+  font-weight: 750;
+  padding: 11px 16px;
+  white-space: nowrap;
+}
+
+.chat-panel-toggle:hover {
+  background: #432c54;
 }
 
 .chat-intro {
@@ -582,10 +749,10 @@ h2 {
   padding: 8px 30px 8px 12px;
 }
 
-.insights-grid {
+.overview-grid {
   display: grid;
   gap: 18px;
-  grid-template-columns: minmax(220px, 0.65fr) minmax(0, 1.35fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
   margin-top: 24px;
 }
 
@@ -596,6 +763,11 @@ h2 {
   border-radius: 18px;
   box-shadow: 0 12px 30px rgb(77 51 83 / 0.06);
   padding: 26px;
+}
+
+.overview-grid .activity-section,
+.overview-grid .expense-structure {
+  height: 100%;
 }
 
 .insight-card h2 {
@@ -771,12 +943,35 @@ tbody tr:last-child td {
     width: 100%;
   }
 
+  .identity-picker {
+    width: 100%;
+  }
+
+  .identity-picker label {
+    flex: 1;
+  }
+
+  .identity-picker input {
+    width: 100%;
+  }
+
+  .selected-profile {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .summary-grid {
     grid-template-columns: 1fr;
   }
 
-  .insights-grid {
+  .overview-grid {
     grid-template-columns: 1fr;
+  }
+
+  .ai-chat-section.open {
+    bottom: 12px;
+    right: 12px;
+    width: calc(100vw - 24px);
   }
 
   .summary-card {

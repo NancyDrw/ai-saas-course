@@ -24,6 +24,7 @@ class ChatState(TypedDict):
     answer: str
     pending_action: dict[str, object] | None
     thread_id: str
+    user_id: int | None
 
 
 class ChatGeneration(TypedDict):
@@ -33,14 +34,14 @@ class ChatGeneration(TypedDict):
     pending_action: dict[str, object] | None
 
 
-AnswerBuilder = Callable[[list[ChatMessage], str], Awaitable[ChatGeneration]]
+AnswerBuilder = Callable[[list[ChatMessage], str, int | None], Awaitable[ChatGeneration]]
 
 
 def create_chat_graph(answer_builder: AnswerBuilder):
     """Create a graph whose checkpointer keeps one thread's message context."""
 
     async def answer_user(state: ChatState) -> dict[str, object]:
-        generation = await answer_builder(state["messages"], state["thread_id"])
+        generation = await answer_builder(state["messages"], state["thread_id"], state["user_id"])
         return {
             "messages": [{"role": "assistant", "content": generation["answer"]}],
             "answer": generation["answer"],

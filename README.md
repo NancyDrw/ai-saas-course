@@ -36,6 +36,20 @@ cp .env.example .env
 
 У `.env` мають бути рядки `BOT_TOKEN=...`, `DATABASE_URL=...` та `ADMIN_PASSWORD=...`. `ADMIN_PASSWORD` потрібен лише для локального доступу до web-адмінки. Секрети не зберігайте в коді, не комітьте `.env` і не додавайте їх до логів.
 
+## Особистий кабінет через Telegram
+
+Публічний кабінет Intima не приймає Telegram ID вручну. Користувач відкриває його кнопкою в боті, а backend перевіряє підписані Telegram дані (`initData`) і створює захищену HttpOnly-сесію.
+
+Для увімкнення кнопки у боті додайте у локальний `.env` або в Render Environment:
+
+```env
+WEB_APP_URL=https://your-public-intima-app.example/?view=cabinet
+PUBLIC_WEB_ORIGIN=https://your-public-intima-app.example
+APP_ENV=production
+```
+
+`WEB_APP_URL` має використовувати HTTPS. `PUBLIC_WEB_ORIGIN` потрібен, якщо React і FastAPI розгорнуті на різних доменах. Не додавайте `BOT_TOKEN` у React, URL або Git.
+
 3. Запустіть бота:
 
 ```bash
@@ -83,6 +97,8 @@ npm run dev
 ```
 
 Відкрийте адресу, яку покаже Vite (зазвичай `http://localhost:5173`), введіть `ADMIN_PASSWORD` та керуйте кредитами Intima. Адмінка отримує дані лише через `/api`; Vite передає ці запити на FastAPI локально.
+
+У шапці адмінки можна ввести Telegram ID та натиснути «Показати». Тоді ledger, баланс і AI INSIGHT працюватимуть лише з операціями цього профілю. Без введеного ID зберігається загальний адміністративний огляд. Людина має спершу відкрити бота й надіслати `/start`, щоб її Telegram ID з’явився в базі.
 
 ## Debug / Troubleshooting
 
