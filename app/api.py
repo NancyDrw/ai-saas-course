@@ -45,10 +45,12 @@ from .database import (
     Couple,
     CreditTransaction,
     PendingAiAction,
+    PracticeUnlock,
     User,
     apply_identity_schema_migration,
     create_database_engine,
 )
+from .practices import PRACTICE_COST, PRACTICES, PRACTICES_BY_ID
 from .telegram_auth import TelegramAuthError, TelegramIdentity, validate_webapp_init_data
 
 
@@ -119,6 +121,28 @@ class CurrentUserResponse(BaseModel):
     telegram_id: int
     first_name: str | None
     username: str | None
+
+
+class PracticePreviewResponse(BaseModel):
+    id: str
+    collection: Literal["couple", "self"]
+    icon: str
+    label: str
+    title: str
+    time: str
+    intro: str
+    price_credits: int
+    unlocked: bool
+
+
+class PracticeLibraryResponse(BaseModel):
+    balance: Decimal
+    practices: list[PracticePreviewResponse]
+
+
+class PracticeContentResponse(PracticePreviewResponse):
+    steps: list[str]
+    warning: str | None = None
 
 
 class TelegramIdentityResponse(CurrentUserResponse):
@@ -274,6 +298,42 @@ async def get_current_user(
     return user
 
 
+async def get_user_credit_balance(session: AsyncSession, user_id: int) -> Decimal:
+    """Calculate the balance from the user's own immutable credit ledger."""
+    result = await session.execute(
+        select(CreditTransaction.transaction_type, CreditTransaction.amount).where(
+            CreditTransaction.user_id == user_id
+        )
+    )
+    balance = Decimal("0")
+    for transaction_type, amount in result.all():
+        balance += amount if transaction_type == "income" else -amount
+    return balance
+
+
+def serialize_practice_preview(practice: dict[str, object], unlocked: bool) -> PracticePreviewResponse:
+    return PracticePreviewResponse(
+        id=str(practice["id"]),
+        collection=str(practice["collection"]),
+        icon=str(practice["icon"]),
+        label=str(practice["label"]),
+        title=str(practice["title"]),
+        time=str(practice["time"]),
+        intro=str(practice["intro"]),
+        price_credits=PRACTICE_COST,
+        unlocked=unlocked,
+    )
+
+
+def serialize_practice_content(practice: dict[str, object]) -> PracticeContentResponse:
+    preview = serialize_practice_preview(practice, unlocked=True)
+    return PracticeContentResponse(
+        **preview.model_dump(),
+        steps=[str(step) for step in practice["steps"]],
+        warning=str(practice["warning"]) if practice.get("warning") else None,
+    )
+
+
 async def require_admin(
     password: str | None = Header(default=None, alias="X-Admin-Password"),
 ) -> None:
@@ -361,6 +421,89 @@ async def get_me(user: User = Depends(get_current_user)) -> CurrentUserResponse:
         first_name=user.first_name,
         username=user.username,
     )
+
+
+async def get_practice_library_for_user(
+    session: AsyncSession, user: User
+) -> PracticeLibraryResponse:
+    """Return catalog metadata and unlock status for one user only."""
+    unlocked_ids = set(
+        (
+            await session.scalars(
+                select(PracticeUnlock.practice_id).where(PracticeUnlock.user_id == user.id)
+            )
+        ).all()
+    )
+    return PracticeLibraryResponse(
+        balance=await get_user_credit_balance(session, user.id),
+        practices=[
+            serialize_practice_preview(practice, str(practice["id"]) in unlocked_ids)
+            for practice in PRACTICES
+        ],
+    )
+
+
+@app.get("/api/me/practices", response_model=PracticeLibraryResponse)
+async def list_my_practices(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> PracticeLibraryResponse:
+    """List the five curated practices without exposing another user's ledger."""
+    return await get_practice_library_for_user(session, user)
+
+
+async def unlock_practice_for_user(
+    session: AsyncSession, user: User, practice_id: str
+) -> PracticeContentResponse:
+    """Atomically unlock a practice, charging its owner only the first time."""
+    practice = PRACTICES_BY_ID.get(practice_id)
+    if practice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Практику не знайдено.")
+
+    # Serialize simultaneous taps from one profile before calculating the balance.
+    locked_user = await session.scalar(select(User).where(User.id == user.id).with_for_update())
+    if locked_user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Потрібен вхід через Telegram.")
+
+    existing_unlock = await session.scalar(
+        select(PracticeUnlock).where(
+            PracticeUnlock.user_id == locked_user.id,
+            PracticeUnlock.practice_id == practice_id,
+        )
+    )
+    if existing_unlock is not None:
+        return serialize_practice_content(practice)
+
+    balance = await get_user_credit_balance(session, locked_user.id)
+    if balance < PRACTICE_COST:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Недостатньо кредитів, щоб відкрити цю практику.",
+        )
+
+    session.add(
+        CreditTransaction(
+            user_id=locked_user.id,
+            transaction_type="expense",
+            amount=Decimal(str(PRACTICE_COST)),
+            category="Практика Intima",
+            description=f"Відкрито практику: {practice['title']}",
+            occurred_on=date.today(),
+        )
+    )
+    session.add(PracticeUnlock(user_id=locked_user.id, practice_id=practice_id))
+    await session.commit()
+    return serialize_practice_content(practice)
+
+
+@app.post("/api/me/practices/{practice_id}/open", response_model=PracticeContentResponse)
+async def open_my_practice(
+    practice_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> PracticeContentResponse:
+    """Unlock one practice after an explicit one-credit purchase by its owner."""
+    return await unlock_practice_for_user(session, user, practice_id)
 
 
 @app.post("/api/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -512,6 +655,35 @@ async def get_telegram_identity(
         username=user.username,
         couples=[{"id": couple.id, "title": couple.title} for couple in couples.scalars()],
     )
+
+
+@app.get(
+    "/api/admin/identities/telegram/{telegram_id}/practices",
+    response_model=PracticeLibraryResponse,
+)
+async def get_admin_practice_library(
+    telegram_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_admin),
+) -> PracticeLibraryResponse:
+    """Let an admin demonstrate one selected user's paid practice library."""
+    user = await get_user_by_telegram_id(session, telegram_id)
+    return await get_practice_library_for_user(session, user)
+
+
+@app.post(
+    "/api/admin/identities/telegram/{telegram_id}/practices/{practice_id}/open",
+    response_model=PracticeContentResponse,
+)
+async def open_admin_practice(
+    telegram_id: int,
+    practice_id: str,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_admin),
+) -> PracticeContentResponse:
+    """Open a practice for the admin-selected profile using the same credit rules."""
+    user = await get_user_by_telegram_id(session, telegram_id)
+    return await unlock_practice_for_user(session, user, practice_id)
 
 
 @app.get("/api/transactions", response_model=list[TransactionResponse])
