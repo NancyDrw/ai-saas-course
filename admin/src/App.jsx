@@ -19,6 +19,154 @@ const filters = [
   { value: "expense", label: "Списання" },
 ];
 
+const couplePractices = [
+  {
+    id: "sensate-focus",
+    icon: "🤲",
+    label: "Дотик без мети",
+    title: "Sensate Focus: дотик без мети",
+    time: "40–50 хвилин",
+    intro: "Практика, у якій важливі відчуття та цікавість, а не результат.",
+    steps: [
+      "Домовтеся про 40–50 хвилин і поділіть час приблизно порівну: по 15–20 хвилин на кожного.",
+      "Торкайтеся рук, спини, плечей, шиї, обличчя чи живота — без сексуальних дій і без спроб досягти певного результату.",
+      "Той або та, кого торкаються, може м’яко просити: «трохи ніжніше», «вище» або «повільніше».",
+      "Наприкінці коротко обговоріть, що було приємним, несподіваним чи складним.",
+    ],
+  },
+  {
+    id: "emotion-and-need",
+    icon: "💬",
+    label: "Емоція й потреба",
+    title: "Щоденний обмін емоцією й потребою",
+    time: "5 хвилин",
+    intro: "Маленький щоденний check-in, який допомагає чути одне одного без накопичення напруги.",
+    steps: [
+      "По черзі завершіть три фрази: «Я почуваюся…», «щодо…», «і мені зараз потрібно…».",
+      "Обирайте будь-яку тему: це не обов’язково має бути конфлікт.",
+      "Спробуйте зробити це за вечерею, на прогулянці або в короткому листуванні.",
+      "Дайте партнеру простір вислухати, не виправляючи почуття та не поспішаючи з рішеннями.",
+    ],
+  },
+  {
+    id: "curious-assumptions",
+    icon: "🔎",
+    label: "Замість припущень",
+    title: "Чи правильні мої припущення?",
+    time: "10–15 хвилин",
+    intro: "Вправа допомагає замінити здогадки про партнера уважною цікавістю.",
+    steps: [
+      "Кожен обирає одну конкретну ситуацію.",
+      "Обережно сформулюйте здогад: «Коли сталося ___, я подумав/-ла, що ти відчував/-ла ___; це так?».",
+      "Завдання іншого — уточнити свою відповідь, а не захищатися.",
+      "Наприкінці назвіть одну річ, яку ви зрозуміли про досвід партнера трохи точніше.",
+    ],
+  },
+  {
+    id: "needs-map",
+    icon: "🗺️",
+    label: "Карта потреб",
+    title: "Карта потреб у стосунках",
+    time: "20 хвилин",
+    intro: "Спосіб помітити, що саме зараз підтримує відчуття близькості для кожного з вас.",
+    steps: [
+      "Окремо випишіть п’ять важливих потреб у стосунках: наприклад, ніжність, час удвох, підтримку, легкість або більше ініціативи.",
+      "Кожен обирає одну найактуальнішу потребу та пояснює: «Чому це важливо для мене зараз?».",
+      "Партнер спершу лише слухає, а потім переповідає почуте своїми словами.",
+      "Запитайте: «Який маленький крок міг би підтримати цю потребу цього тижня?».",
+    ],
+  },
+  {
+    id: "intimacy-space",
+    icon: "🕯️",
+    label: "Простір для близькості",
+    title: "Плануйте не секс, а простір для близькості",
+    time: "Раз на тиждень",
+    intro: "Регулярна зустріч без побутових справ, телефонів і вимоги сексу.",
+    steps: [
+      "Раз на тиждень домовтеся про час для «інтимної зустрічі» без телефонів і справ.",
+      "Оберіть те, що зараз відчувається природно: обійми, ванна, масаж, розмова, прогулянка чи дотики.",
+      "Не ставте сексу обов’язковою метою цієї зустрічі.",
+      "Після завершення скажіть одне одному, що допомогло відчути більше контакту.",
+    ],
+  },
+];
+
+const selfDiscoveryPractices = [
+  {
+    id: "object-projection",
+    icon: "🪞",
+    label: "Проекція на предмет",
+    title: "Проекція на предмет",
+    time: "15–20 хвилин",
+    intro: "Образна практика для м’якого дослідження власного ставлення до сексуальності.",
+    steps: [
+      "Оберіть перший предмет, який привернув вашу увагу.",
+      "Уявіть, що цей предмет — образ вашої сексуальності.",
+      "Запитайте себе: яка вона, чого боїться, про що мріє та як із нею взаємодіють?",
+      "Наприкінці сформулюйте, яке послання цей образ передає саме вам.",
+    ],
+  },
+  {
+    id: "sexual-words",
+    icon: "✍️",
+    label: "Сексуальні слова",
+    title: "Сексуальні слова",
+    time: "15 хвилин",
+    intro: "Вправа, що допомагає помітити власні асоціації, напругу та заборони навколо теми сексуальності.",
+    steps: [
+      "Розділіть аркуш на три колонки: позитивні, нейтральні або суперечливі та негативні або заборонені асоціації.",
+      "Запишіть слова й асоціації, що виникають у вас поруч зі словами «секс» і «сексуальність».",
+      "Подивіться, яких слів найбільше та що повторюється.",
+      "М’яко зауважте, біля яких слів з’являється напруга, сором або цікавість.",
+    ],
+  },
+  {
+    id: "letter-to-body",
+    icon: "💌",
+    label: "Лист своєму тілу",
+    title: "Лист своєму тілу",
+    time: "15–25 хвилин",
+    intro: "Дбайливе письмове звернення до інтимної частини тіла як до живої частини себе.",
+    steps: [
+      "Напишіть лист до інтимної частини свого тіла так, ніби звертаєтеся до близької живої частини себе.",
+      "Можете запитати: «Як ти почуваєшся?», «Коли я тебе не чую?», «Чого ти потребуєш від мене?».",
+      "Дайте собі час записати відповідь без оцінювання та поспіху.",
+      "Після листа зауважте, що виникло: тепло, сором, напруга, віддаленість чи щось інше.",
+    ],
+  },
+  {
+    id: "meeting-shame",
+    icon: "🌧️",
+    label: "Познайомитися зі соромом",
+    title: "Познайомитися зі своїм соромом",
+    time: "15–20 хвилин",
+    intro: "Образна практика, що допомагає побачити сором без самозасудження.",
+    steps: [
+      "Намалюйте або опишіть свій сором як персонажа, образ чи істоту.",
+      "Запитайте: «Від чого він мене захищає?».",
+      "Подумайте, як цей голос міг би допомагати без самозасудження.",
+      "Спробуйте перетворити його на уважність до власних меж, розбірливість або цікавість до себе.",
+    ],
+  },
+  {
+    id: "body-scan-breathing",
+    icon: "🌿",
+    label: "Сканування тіла з диханням",
+    title: "Сканування тіла з диханням",
+    time: "10–15 хвилин",
+    intro: "Коротка практика заземлення та уважного контакту з тілесними відчуттями.",
+    steps: [
+      "Сядьте або ляжте зручно: одну руку покладіть на груди, іншу — на живіт.",
+      "Зробіть 10 повільних циклів: вдих на 4 секунди, пауза на 2, видих на 6, пауза на 2.",
+      "Після цього уважно проскануйте тіло від голови до стоп.",
+      "Зауважте, де є тепло, напруга, порожнеча, легкість або бажання рухатися — без потреби щось змінювати.",
+    ],
+  },
+];
+
+const selfDiscoveryWarning = "Якщо під час будь-якої вправи з’являються сильний страх, біль або травматичні спогади, варто зупинитися й досліджувати це з психологом.";
+
 const insightChatThreadStorageKey = "ai-insight-chat-thread";
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const publicCabinetMode = new URLSearchParams(window.location.search).get("view") === "cabinet";
@@ -75,12 +223,29 @@ export default function App() {
   const [actionProcessing, setActionProcessing] = useState(false);
   const [pendingActionError, setPendingActionError] = useState(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isPracticesOpen, setIsPracticesOpen] = useState(false);
+  const [practiceCollection, setPracticeCollection] = useState("couple");
+  const [selectedPractice, setSelectedPractice] = useState(null);
+  const [practiceLibrary, setPracticeLibrary] = useState(null);
+  const [isPublicPracticesOpen, setIsPublicPracticesOpen] = useState(false);
+  const [practiceToOpen, setPracticeToOpen] = useState(null);
+  const [openedPractice, setOpenedPractice] = useState(null);
+  const [practiceOpeningId, setPracticeOpeningId] = useState(null);
+  const [practicePurchaseError, setPracticePurchaseError] = useState(null);
+  const [adminPracticeLibrary, setAdminPracticeLibrary] = useState(null);
+  const [adminPracticeOpeningId, setAdminPracticeOpeningId] = useState(null);
+  const [adminPracticeError, setAdminPracticeError] = useState(null);
   const [telegramUser, setTelegramUser] = useState(null);
   const [telegramAuthError, setTelegramAuthError] = useState(null);
   const [telegramAuthLoading, setTelegramAuthLoading] = useState(publicCabinetMode);
   const [insightChatThreadId, setInsightChatThreadId] = useState(
     () => window.sessionStorage.getItem(insightChatThreadStorageKey) || "",
   );
+
+  const loadPracticeLibrary = useCallback(async () => {
+    const library = await fetchJson("/api/me/practices");
+    setPracticeLibrary(library);
+  }, []);
 
   useEffect(() => {
     if (!publicCabinetMode) {
@@ -100,10 +265,34 @@ export default function App() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ init_data: webApp.initData }),
     })
-      .then(setTelegramUser)
+      .then(async (user) => {
+        setTelegramUser(user);
+        try {
+          await loadPracticeLibrary();
+        } catch {
+          setPracticePurchaseError("Не вдалося завантажити добірку практик. Спробуйте ще раз.");
+        }
+      })
       .catch(() => setTelegramAuthError("Не вдалося безпечно підтвердити Telegram-профіль. Відкрийте кабінет ще раз через бота."))
       .finally(() => setTelegramAuthLoading(false));
-  }, []);
+  }, [loadPracticeLibrary]);
+
+  useEffect(() => {
+    if (!isPracticesOpen && !isPublicPracticesOpen) {
+      return undefined;
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") {
+        setIsPracticesOpen(false);
+        setSelectedPractice(null);
+        setIsPublicPracticesOpen(false);
+        setPracticeToOpen(null);
+        setOpenedPractice(null);
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [isPracticesOpen, isPublicPracticesOpen]);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -133,6 +322,19 @@ export default function App() {
       setLoading(false);
     }
   }, [accessPassword, loadDashboard]);
+
+  const loadAdminPracticeLibrary = useCallback(async (identity) => {
+    if (!identity || !accessPassword) {
+      setAdminPracticeLibrary(null);
+      return null;
+    }
+    const library = await fetchJson(
+      `/api/admin/identities/telegram/${identity.telegram_id}/practices`,
+      { headers: { "X-Admin-Password": accessPassword } },
+    );
+    setAdminPracticeLibrary(library);
+    return library;
+  }, [accessPassword]);
 
   const categories = useMemo(
     () => [...new Set(transactions.map((transaction) => transaction.category))].sort(),
@@ -170,6 +372,11 @@ export default function App() {
     { label: "Списано", value: summary?.total_expense ?? 0, icon: "🌿" },
     { label: "Баланс кредитів", value: summary?.balance ?? 0, icon: "💜" },
   ];
+  const selectedAdminPractice = selectedPractice
+    ? adminPracticeLibrary?.practices.find((practice) => practice.id === selectedPractice.id)
+    : null;
+  const activeAdminPractices = practiceCollection === "self" ? selfDiscoveryPractices : couplePractices;
+  const activePracticeTitle = practiceCollection === "self" ? "Практики для самопізнання" : "Практики для двох";
 
   async function handleAccess(event) {
     event.preventDefault();
@@ -208,6 +415,7 @@ export default function App() {
         headers: { "X-Admin-Password": accessPassword },
       });
       setSelectedIdentity(identity);
+      await loadAdminPracticeLibrary(identity);
       setInsightChatThreadId("");
       setInsightChatMessages([]);
       setPendingAction(null);
@@ -221,6 +429,65 @@ export default function App() {
   function handleChange(event) {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function openPractices(collection = "couple") {
+    setPracticeCollection(collection);
+    setSelectedPractice(null);
+    setIsPracticesOpen(true);
+  }
+
+  function closePractices() {
+    setIsPracticesOpen(false);
+    setSelectedPractice(null);
+  }
+
+  function closePublicPractices() {
+    setIsPublicPracticesOpen(false);
+    setPracticeToOpen(null);
+    setOpenedPractice(null);
+    setPracticePurchaseError(null);
+  }
+
+  async function openPublicPractice(practice) {
+    setPracticeOpeningId(practice.id);
+    setPracticePurchaseError(null);
+    try {
+      const content = await fetchJson(`/api/me/practices/${practice.id}/open`, { method: "POST" });
+      setOpenedPractice(content);
+      setPracticeToOpen(null);
+      await loadPracticeLibrary();
+    } catch (requestError) {
+      setPracticePurchaseError(
+        requestError.message || "Не вдалося відкрити практику. Спробуйте ще раз.",
+      );
+    } finally {
+      setPracticeOpeningId(null);
+    }
+  }
+
+  async function openAdminPractice(practice) {
+    if (!selectedIdentity || adminPracticeOpeningId) {
+      return;
+    }
+    setAdminPracticeOpeningId(practice.id);
+    setAdminPracticeError(null);
+    try {
+      await fetchJson(
+        `/api/admin/identities/telegram/${selectedIdentity.telegram_id}/practices/${practice.id}/open`,
+        {
+          method: "POST",
+          headers: { "X-Admin-Password": accessPassword },
+        },
+      );
+      await Promise.all([loadDashboard(), loadAdminPracticeLibrary(selectedIdentity)]);
+    } catch (requestError) {
+      setAdminPracticeError(
+        requestError.message || "Не вдалося відкрити практику для цього профілю.",
+      );
+    } finally {
+      setAdminPracticeOpeningId(null);
+    }
   }
 
   async function handleSubmit(event) {
@@ -407,13 +674,96 @@ export default function App() {
                 Вітаємо, {telegramUser.first_name || telegramUser.username || "друже"}. Ваш профіль Intima підтверджено через Telegram.
               </p>
               <div className="cabinet-next-steps">
-                <p>Незабаром тут з’являться ваші картки, вправи, check-in та спільний простір пари.</p>
+                <p>Оберіть одну з м’яких практик для близькості. Кожна нова практика відкривається за 1 кредит Intima.</p>
                 <p>Ми не показуємо чужі дані й не просимо вводити Telegram ID вручну.</p>
               </div>
+              <section className="cabinet-practices" aria-labelledby="cabinet-practices-heading">
+                <div>
+                  <p className="eyebrow">ПРАКТИКИ INTIMA</p>
+                  <h2 id="cabinet-practices-heading">Ваш баланс: {formatCredits(practiceLibrary?.balance ?? 0)} кредитів</h2>
+                </div>
+                <button className="cabinet-practices-button" disabled={!practiceLibrary} onClick={() => setIsPublicPracticesOpen(true)} type="button">
+                  {practiceLibrary ? "Обрати практику" : "Завантажуємо…"}
+                </button>
+              </section>
+              {practicePurchaseError && <p className="form-error" role="alert">{practicePurchaseError}</p>}
               <button className="logout-button" onClick={handleTelegramLogout} type="button">Закрити кабінет</button>
             </>
           )}
         </section>
+
+        {isPublicPracticesOpen && (
+          <div className="practices-overlay" onMouseDown={closePublicPractices} role="presentation">
+            <section
+              aria-labelledby="public-practices-heading"
+              aria-modal="true"
+              className="practices-modal public-practices-modal"
+              onMouseDown={(event) => event.stopPropagation()}
+              role="dialog"
+            >
+              <button aria-label="Закрити практики" className="modal-close-button" onClick={closePublicPractices} type="button">×</button>
+              {openedPractice ? (
+                <>
+                  <button className="back-to-practices" onClick={() => setOpenedPractice(null)} type="button">← До добірки</button>
+                  <div className="practice-detail-heading">
+                    <span aria-hidden="true">{openedPractice.icon}</span>
+                    <div>
+                      <p className="eyebrow">{openedPractice.time} · ВІДКРИТО</p>
+                      <h2 id="public-practices-heading">{openedPractice.title}</h2>
+                    </div>
+                  </div>
+                  <p className="practices-intro">{openedPractice.intro}</p>
+                  <ol className="practice-steps">
+                    {openedPractice.steps.map((step) => <li key={step}>{step}</li>)}
+                  </ol>
+                  <p className="practice-note">💜 {openedPractice.collection === "self" ? "Обирайте лише те, що комфортно вам. Можна зупинитися, змінити темп або відкласти вправу в будь-який момент." : "Обирайте лише те, що комфортно вам обом. Можна зупинитися, змінити темп або відкласти вправу в будь-який момент."}</p>
+                  {openedPractice.warning && <p className="practice-warning">⚠️ {openedPractice.warning}</p>}
+                </>
+              ) : practiceToOpen ? (
+                <>
+                  <button className="back-to-practices" disabled={Boolean(practiceOpeningId)} onClick={() => setPracticeToOpen(null)} type="button">← До добірки</button>
+                  <span className="purchase-practice-icon" aria-hidden="true">{practiceToOpen.icon}</span>
+                  <p className="eyebrow">ПІДТВЕРДЖЕННЯ ВІДКРИТТЯ</p>
+                  <h2 id="public-practices-heading">Відкрити «{practiceToOpen.label}»?</h2>
+                  <p className="practices-intro">З вашого балансу буде списано 1 кредит Intima. Після цього практика залишиться доступною для вас без повторної оплати.</p>
+                  {practiceToOpen.collection === "self" && <p className="practice-warning">⚠️ {selfDiscoveryWarning}</p>}
+                  {practicePurchaseError && <p className="form-error" role="alert">{practicePurchaseError}</p>}
+                  <div className="practice-purchase-actions">
+                    <button className="purchase-confirm-button" disabled={Boolean(practiceOpeningId)} onClick={() => openPublicPractice(practiceToOpen)} type="button">
+                      {practiceOpeningId ? "Відкриваємо…" : "Відкрити за 1 кредит"}
+                    </button>
+                    <button className="purchase-cancel-button" disabled={Boolean(practiceOpeningId)} onClick={() => setPracticeToOpen(null)} type="button">Не зараз</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="eyebrow">INTIMA · ПРАКТИКИ</p>
+                  <h2 id="public-practices-heading">Оберіть практику</h2>
+                  <p className="practices-intro">Нову практику можна відкрити за 1 кредит. Уже відкриті практики залишаться з вами.</p>
+                  {[
+                    { id: "couple", label: "Для вас двох" },
+                    { id: "self", label: "Для самопізнання" },
+                  ].map((group) => (
+                    <section className="public-practice-group" key={group.id}>
+                      <p className="eyebrow">{group.label}</p>
+                      <div className="practice-choice-grid">
+                        {practiceLibrary?.practices.filter((practice) => practice.collection === group.id).map((practice) => (
+                          <button className="practice-choice" disabled={practiceOpeningId === practice.id} key={practice.id} onClick={() => (
+                            practice.unlocked ? openPublicPractice(practice) : setPracticeToOpen(practice)
+                          )} type="button">
+                            <span aria-hidden="true">{practice.icon}</span>
+                            <strong>{practice.label}</strong>
+                            <small>{practice.unlocked ? "✓ Уже відкрито" : "1 кредит · "}{practice.time}</small>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </>
+              )}
+            </section>
+          </div>
+        )}
       </main>
     );
   }
@@ -448,14 +798,25 @@ export default function App() {
   return (
     <main className="dashboard">
       <header className="hero">
-        <div>
+        <div className="brand-block">
           <p className="eyebrow">INTIMA · ADMIN</p>
-          <h1>Огляд Intima <span className="title-heart">♥</span></h1>
+          <h1>Сервіс Intima <span className="title-heart">♥</span></h1>
           <p className="subtitle">
-            Кредити, взаємодії та корисні сервіси для близькості у парі.
+            Кредити, взаємодії та корисні сервіси для самопізнання та близькості у парі.
           </p>
         </div>
-        <div className="header-actions">
+        <div className="admin-controls">
+          <div className="system-actions">
+            <button className="logout-button" onClick={() => {
+              setAccessPassword("");
+              setSelectedIdentity(null);
+              setTelegramIdInput("");
+              setAdminPracticeLibrary(null);
+            }}>Вийти</button>
+            <button className="refresh-button" onClick={loadDashboard} disabled={loading}>
+              {loading ? "Оновлюємо…" : "Оновити"}
+            </button>
+          </div>
           <form className="identity-picker" onSubmit={handleIdentitySelection}>
             <label>
               <span>Telegram ID</span>
@@ -470,19 +831,19 @@ export default function App() {
               {selectingIdentity ? "Шукаємо…" : "Показати"}
             </button>
           </form>
+        </div>
+        <div className="functional-actions" aria-label="Функції Intima">
+          <button className="practices-trigger" onClick={() => openPractices("couple")} type="button">
+            ♡ Практики для двох
+          </button>
+          <button className="practices-trigger self-practices-trigger" onClick={() => openPractices("self")} type="button">
+            ✦ Самопізнання
+          </button>
           <button className="add-operation-button" onClick={() => setFormOpen(true)} type="button">
             ＋ Додати операцію
           </button>
           <button className="insight-trigger" onClick={() => setIsChatOpen((open) => !open)} type="button">
             ✨ AI INSIGHT
-          </button>
-          <button className="logout-button" onClick={() => {
-            setAccessPassword("");
-            setSelectedIdentity(null);
-            setTelegramIdInput("");
-          }}>Вийти</button>
-          <button className="refresh-button" onClick={loadDashboard} disabled={loading}>
-            {loading ? "Оновлюємо…" : "Оновити"}
           </button>
         </div>
       </header>
@@ -490,7 +851,6 @@ export default function App() {
       {identityError && <p className="identity-error" role="alert">{identityError}</p>}
       {selectedIdentity && (
         <section className="selected-profile" aria-label="Обраний профіль">
-          <span>🌿</span>
           <p>
             Показано дані: <strong>{selectedIdentity.first_name || selectedIdentity.username || "користувач"}</strong>
             {" · "}Telegram ID {selectedIdentity.telegram_id}
@@ -502,6 +862,7 @@ export default function App() {
             setInsightChatThreadId("");
             setInsightChatMessages([]);
             setPendingAction(null);
+            setAdminPracticeLibrary(null);
           }} type="button">Показати всі дані</button>
         </section>
       )}
@@ -775,6 +1136,87 @@ export default function App() {
           )}
       </section>
       </div>
+
+      {isPracticesOpen && (
+        <div className="practices-overlay" onMouseDown={closePractices} role="presentation">
+          <section
+            aria-labelledby="practices-heading"
+            aria-modal="true"
+            className="practices-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <button aria-label="Закрити практики" className="modal-close-button" onClick={closePractices} type="button">×</button>
+            {!selectedPractice ? (
+              <>
+                <p className="eyebrow">{practiceCollection === "self" ? "INTIMA · ДЛЯ СЕБЕ" : "INTIMA · ДЛЯ ВАС ДВОХ"}</p>
+                <h2 id="practices-heading">{activePracticeTitle}</h2>
+                <p className="practices-intro">
+                  {selectedIdentity
+                    ? `Баланс профілю: ${formatCredits(adminPracticeLibrary?.balance ?? 0)} кредитів. Відкриття нової практики коштує 1 кредит.`
+                    : "Спершу оберіть Telegram ID у верхній частині адмінки, щоб протестувати списання кредиту для профілю."}
+                </p>
+                <div className="practice-choice-grid">
+                  {activeAdminPractices.map((practice) => (
+                    <button className="practice-choice" key={practice.id} onClick={() => setSelectedPractice(practice)} type="button">
+                      <span aria-hidden="true">{practice.icon}</span>
+                      <strong>{practice.label}</strong>
+                      <small>
+                        {selectedIdentity && adminPracticeLibrary?.practices.find((item) => item.id === practice.id)?.unlocked
+                          ? "✓ Уже відкрито"
+                          : `1 кредит · ${practice.time}`}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <button className="back-to-practices" onClick={() => setSelectedPractice(null)} type="button">← Усі практики</button>
+                <div className="practice-detail-heading">
+                  <span aria-hidden="true">{selectedPractice.icon}</span>
+                  <div>
+                    <p className="eyebrow">{selectedPractice.time}</p>
+                    <h2 id="practices-heading">{selectedPractice.title}</h2>
+                  </div>
+                </div>
+                {selectedAdminPractice?.unlocked ? (
+                  <>
+                    <p className="practices-intro">{selectedPractice.intro}</p>
+                    <ol className="practice-steps">
+                      {selectedPractice.steps.map((step) => <li key={step}>{step}</li>)}
+                    </ol>
+                    <p className="practice-note">💜 {practiceCollection === "self" ? "Обирайте лише те, що комфортно вам. Можна зупинитися, змінити темп або відкласти вправу в будь-який момент." : "Обирайте лише те, що комфортно вам обом. Можна зупинитися, змінити темп або відкласти вправу в будь-який момент."}</p>
+                    {practiceCollection === "self" && <p className="practice-warning">⚠️ {selfDiscoveryWarning}</p>}
+                  </>
+                ) : (
+                  <p className="practice-locked-copy">Кроки цієї вправи відкриються для обраного профілю після підтвердження списання 1 кредиту.</p>
+                )}
+                <div className="admin-practice-access">
+                  {!selectedIdentity ? (
+                    <p>Оберіть Telegram ID у адмінці, щоб відкрити цю практику для конкретного профілю.</p>
+                  ) : selectedAdminPractice?.unlocked ? (
+                    <p className="practice-unlocked-status">✓ Ця практика вже відкрита для обраного профілю. Повторного списання не буде.</p>
+                  ) : (
+                    <>
+                      <p>Для профілю буде створено списання 1 кредиту в категорії «Практика Intima».</p>
+                      <button
+                        className="purchase-confirm-button"
+                        disabled={Boolean(adminPracticeOpeningId)}
+                        onClick={() => openAdminPractice(selectedPractice)}
+                        type="button"
+                      >
+                        {adminPracticeOpeningId ? "Відкриваємо…" : "Відкрити для профілю за 1 кредит"}
+                      </button>
+                    </>
+                  )}
+                  {adminPracticeError && <p className="form-error" role="alert">{adminPracticeError}</p>}
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      )}
     </main>
   );
 }
