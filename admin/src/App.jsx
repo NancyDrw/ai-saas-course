@@ -169,7 +169,9 @@ const selfDiscoveryWarning = "Якщо під час будь-якої впра�
 
 const insightChatThreadStorageKey = "ai-insight-chat-thread";
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
-const publicCabinetMode = new URLSearchParams(window.location.search).get("view") === "cabinet";
+const currentView = new URLSearchParams(window.location.search).get("view");
+const publicCabinetMode = currentView === "cabinet";
+const adminMode = currentView === "admin";
 
 async function fetchJson(path, options = {}) {
   const response = await fetch(`${apiBaseUrl}${path}`, { credentials: "include", ...options });
@@ -764,6 +766,26 @@ export default function App() {
             </section>
           </div>
         )}
+      </main>
+    );
+  }
+
+  if (!adminMode) {
+    return (
+      <main className="public-cabinet">
+        <section className="public-cabinet-card">
+          <p className="eyebrow">INTIMA · ПРОСТІР ТУРБОТИ</p>
+          <span className="cabinet-flower" aria-hidden="true">♥</span>
+          <h1>Самопізнання та близькість у власному темпі</h1>
+          <p className="subtitle">
+            Intima допомагає досліджувати контакт із собою та будувати тепліші взаємодії в парі через м’які практики.
+          </p>
+          <div className="cabinet-next-steps">
+            <p><strong>♡ Практики для двох</strong> — вправи для діалогу, дотиків і спільного часу.</p>
+            <p><strong>✦ Самопізнання</strong> — уважні практики для контакту з тілом, потребами й почуттями.</p>
+            <p>Щоб відкрити особистий кабінет і користуватися кредитами, перейдіть сюди кнопкою з Telegram-бота Intima.</p>
+          </div>
+        </section>
       </main>
     );
   }
