@@ -115,6 +115,25 @@ button:disabled {
   filter: brightness(0.93);
 }
 
+.telegram-entry-button {
+  align-items: center;
+  background: linear-gradient(135deg, #a75e93, #75488a);
+  border-radius: 999px;
+  color: #fff;
+  display: inline-flex;
+  font-weight: 750;
+  gap: 8px;
+  justify-content: center;
+  padding: 13px 20px;
+  text-decoration: none;
+  transition: filter 160ms ease, transform 160ms ease;
+}
+
+.telegram-entry-button:hover {
+  filter: brightness(0.93);
+  transform: translateY(-1px);
+}
+
 .access-card {
   background: #fff;
   border: 1px solid #ebe3ec;

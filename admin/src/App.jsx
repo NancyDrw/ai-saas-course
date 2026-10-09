@@ -785,6 +785,12 @@ export default function App() {
             <p><strong>✦ Самопізнання</strong> — уважні практики для контакту з тілом, потребами й почуттями.</p>
             <p>Щоб відкрити особистий кабінет і користуватися кредитами, перейдіть сюди кнопкою з Telegram-бота Intima.</p>
           </div>
+          <a
+            className="telegram-entry-button"
+            href="https://t.me/IntimaCoupleBot?start=web"
+          >
+            ✈ Відкрити Intima у Telegram
+          </a>
         </section>
       </main>
     );
