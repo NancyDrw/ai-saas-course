@@ -787,9 +787,7 @@ export default function App() {
           </div>
           <a
             className="telegram-entry-button"
-            href="https://t.me/IntimaCoupleBot"
-            rel="noreferrer"
-            target="_blank"
+            href="https://t.me/IntimaCoupleBot?start=web"
           >
             ✈ Відкрити Intima у Telegram
           </a>
