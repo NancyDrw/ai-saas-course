@@ -134,6 +134,23 @@ button:disabled {
   transform: translateY(-1px);
 }
 
+.demo-action-link {
+  border-radius: 999px;
+  text-decoration: none;
+}
+
+.demo-profile {
+  margin-bottom: 12px;
+}
+
+.demo-insight-link {
+  margin-top: 22px;
+}
+
+.demo-next-step {
+  margin-top: 24px;
+}
+
 .access-card {
   background: #fff;
   border: 1px solid #ebe3ec;

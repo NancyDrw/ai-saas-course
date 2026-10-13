@@ -61,6 +61,7 @@ GEMINI_MODEL = "gemini-3.6-flash"
 GEMINI_RATE_LIMIT_MESSAGE = "Ліміт запитів Gemini тимчасово вичерпано. Спробуйте ще раз трохи пізніше."
 SESSION_COOKIE_NAME = "intima_session"
 SESSION_TTL_SECONDS = 60 * 60 * 24 * 7
+DEMO_TELEGRAM_ID = 9900000001
 
 database_url = os.getenv("DATABASE_URL")
 if not database_url or database_url == "your_database_url_here":
@@ -242,6 +243,16 @@ async def get_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> Us
             detail="Telegram-користувача не знайдено. Він або вона має спершу надіслати /start боту Intima.",
         )
     return user
+
+
+async def get_demo_user(session: AsyncSession, telegram_id: int) -> User:
+    """Resolve the one shared classroom demo profile and nothing else."""
+    if telegram_id != DEMO_TELEGRAM_ID:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Щоб змінювати власні дані, підтвердьте профіль через Telegram-бота Intima.",
+        )
+    return await get_user_by_telegram_id(session, DEMO_TELEGRAM_ID)
 
 
 def session_signing_key() -> bytes:
@@ -686,6 +697,107 @@ async def open_admin_practice(
     return await unlock_practice_for_user(session, user, practice_id)
 
 
+@app.get("/api/demo/transactions", response_model=list[TransactionResponse])
+async def list_demo_transactions(
+    telegram_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> list[TransactionResponse]:
+    """Read only the shared demo ledger after its explicit ID is supplied."""
+    user = await get_demo_user(session, telegram_id)
+    result = await session.execute(
+        select(CreditTransaction)
+        .where(CreditTransaction.user_id == user.id)
+        .order_by(CreditTransaction.occurred_on.desc(), CreditTransaction.id.desc())
+    )
+    return [serialize_transaction(transaction) for transaction in result.scalars()]
+
+
+@app.get("/api/demo/summary", response_model=SummaryResponse)
+async def get_demo_summary(
+    telegram_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> SummaryResponse:
+    """Return totals for the one shared classroom demo ledger."""
+    user = await get_demo_user(session, telegram_id)
+    result = await session.execute(
+        select(CreditTransaction.transaction_type, CreditTransaction.amount).where(
+            CreditTransaction.user_id == user.id
+        )
+    )
+    total_income = Decimal("0")
+    total_expense = Decimal("0")
+    for transaction_type, amount in result.all():
+        if transaction_type == "income":
+            total_income += amount
+        else:
+            total_expense += amount
+    return SummaryResponse(
+        total_income=total_income,
+        total_expense=total_expense,
+        balance=total_income - total_expense,
+    )
+
+
+@app.post("/api/demo/transactions", response_model=TransactionResponse, status_code=status.HTTP_201_CREATED)
+async def create_demo_transaction(
+    payload: TransactionCreate,
+    session: AsyncSession = Depends(get_session),
+) -> TransactionResponse:
+    """Write only to the shared demo ledger, never to an arbitrary user."""
+    user = await get_demo_user(session, payload.telegram_id or 0)
+    transaction = CreditTransaction(
+        user_id=user.id,
+        transaction_type=payload.type,
+        amount=payload.amount,
+        category=payload.category,
+        description=payload.description,
+        occurred_on=payload.date,
+    )
+    session.add(transaction)
+    await session.commit()
+    await session.refresh(transaction)
+    return serialize_transaction(transaction)
+
+
+@app.delete("/api/demo/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_demo_transaction(
+    transaction_id: int,
+    telegram_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Delete an entry only when it belongs to the shared demo profile."""
+    user = await get_demo_user(session, telegram_id)
+    transaction = await session.get(CreditTransaction, transaction_id)
+    if transaction is None or transaction.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo transaction not found.")
+    await session.delete(transaction)
+    await session.commit()
+
+
+@app.get("/api/demo/practices", response_model=PracticeLibraryResponse)
+async def list_demo_practices(
+    telegram_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> PracticeLibraryResponse:
+    """Expose the practice library for the one shared classroom demo profile."""
+    user = await get_demo_user(session, telegram_id)
+    return await get_practice_library_for_user(session, user)
+
+
+@app.post(
+    "/api/demo/practices/{practice_id}/open",
+    response_model=PracticeContentResponse,
+)
+async def open_demo_practice(
+    practice_id: str,
+    payload: PendingActionRequest,
+    session: AsyncSession = Depends(get_session),
+) -> PracticeContentResponse:
+    """Charge and unlock a practice only on the shared demo profile."""
+    user = await get_demo_user(session, payload.telegram_id or 0)
+    return await unlock_practice_for_user(session, user, practice_id)
+
+
 @app.get("/api/transactions", response_model=list[TransactionResponse])
 async def list_transactions(
     telegram_id: int | None = None,
@@ -828,6 +940,16 @@ async def chat_with_ai_insight(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI INSIGHT is temporarily unavailable. Please try again.",
         ) from None
+
+
+@app.post("/api/demo/ai/chat", response_model=AiChatResponse)
+async def chat_with_demo_ai_insight(
+    payload: AiChatRequest,
+    session: AsyncSession = Depends(get_session),
+) -> AiChatResponse:
+    """Run AI Insight only for the shared demo ledger after its ID is supplied."""
+    await get_demo_user(session, payload.telegram_id or 0)
+    return await chat_with_ai_insight(payload, session, None)
 
 
 async def get_pending_action_or_404(
