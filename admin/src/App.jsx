@@ -197,6 +197,419 @@ function formatCredits(value) {
   }).format(Number(value));
 }
 
+const publicDemoTransactions = [
+  { id: "demo-1", date: "2026-10-06", type: "income", amount: 8, category: "Вітальний бонус", description: "Кредити для знайомства з Intima" },
+  { id: "demo-2", date: "2026-10-07", type: "expense", amount: 1, category: "Практика Intima", description: "Відкрито практику для двох" },
+  { id: "demo-3", date: "2026-10-08", type: "expense", amount: 2, category: "AI-сесія", description: "Персональна рекомендація Intima" },
+  { id: "demo-4", date: "2026-10-09", type: "income", amount: 3, category: "Бонус", description: "Нарахування за активність" },
+];
+const sharedDemoTelegramId = "9900000001";
+
+function PublicDemoDashboard() {
+  const [demoIdInput, setDemoIdInput] = useState("");
+  const [demoAccess, setDemoAccess] = useState(false);
+  const [demoError, setDemoError] = useState(null);
+  const [demoTransactions, setDemoTransactions] = useState(publicDemoTransactions);
+  const [demoFormOpen, setDemoFormOpen] = useState(false);
+  const [demoForm, setDemoForm] = useState(emptyTransaction);
+  const [demoFilter, setDemoFilter] = useState("all");
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoChatOpen, setDemoChatOpen] = useState(false);
+  const [demoChatInput, setDemoChatInput] = useState("");
+  const [demoChatMessages, setDemoChatMessages] = useState([]);
+  const [demoChatThreadId, setDemoChatThreadId] = useState("");
+  const [demoChatLoading, setDemoChatLoading] = useState(false);
+  const [demoChatError, setDemoChatError] = useState(null);
+  const [demoPracticeLibrary, setDemoPracticeLibrary] = useState(null);
+  const [demoPracticesOpen, setDemoPracticesOpen] = useState(false);
+  const [demoPracticeToOpen, setDemoPracticeToOpen] = useState(null);
+  const [demoOpenedPractice, setDemoOpenedPractice] = useState(null);
+  const [demoPracticeOpeningId, setDemoPracticeOpeningId] = useState(null);
+
+  const totalIncome = demoTransactions
+    .filter((transaction) => transaction.type === "income")
+    .reduce((total, transaction) => total + Number(transaction.amount), 0);
+  const totalExpense = demoTransactions
+    .filter((transaction) => transaction.type === "expense")
+    .reduce((total, transaction) => total + Number(transaction.amount), 0);
+  const demoExpenses = useMemo(() => {
+    const totals = new Map();
+    demoTransactions.filter((transaction) => transaction.type === "expense").forEach((transaction) => {
+      totals.set(transaction.category, (totals.get(transaction.category) || 0) + Number(transaction.amount));
+    });
+    return [...totals.entries()].map(([category, amount]) => ({
+      category,
+      amount,
+      share: totalExpense ? Math.round((amount / totalExpense) * 100) : 0,
+    }));
+  }, [demoTransactions, totalExpense]);
+  const visibleDemoTransactions = demoTransactions.filter((transaction) => (
+    demoFilter === "all" || transaction.type === demoFilter
+  ));
+
+  async function loadDemoDashboard() {
+    const query = `?telegram_id=${sharedDemoTelegramId}`;
+    const [, transactions, practices] = await Promise.all([
+      fetchJson(`/api/demo/summary${query}`),
+      fetchJson(`/api/demo/transactions${query}`),
+      fetchJson(`/api/demo/practices${query}`),
+    ]);
+    setDemoTransactions(transactions);
+    setDemoPracticeLibrary(practices);
+  }
+
+  async function handleDemoAccess(event) {
+    event.preventDefault();
+    if (demoIdInput.trim() !== sharedDemoTelegramId) {
+      setDemoAccess(false);
+      setDemoError("Щоб вносити зміни у власний профіль, підтвердьте його через Telegram-бота Intima.");
+      return;
+    }
+    setDemoLoading(true);
+    try {
+      await loadDemoDashboard();
+      setDemoAccess(true);
+      setDemoError(null);
+    } catch (error) {
+      setDemoAccess(false);
+      setDemoError(error.message || "Не вдалося завантажити профіль.");
+    } finally {
+      setDemoLoading(false);
+    }
+  }
+
+  async function handleDemoInsightChat(event) {
+    event.preventDefault();
+    const message = demoChatInput.trim();
+    if (!message || demoChatLoading || !requireDemoAccess()) {
+      return;
+    }
+
+    setDemoChatMessages((current) => [...current, { role: "user", content: message }]);
+    setDemoChatInput("");
+    setDemoChatError(null);
+    setDemoChatLoading(true);
+    try {
+      const result = await fetchJson("/api/demo/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          telegram_id: Number(sharedDemoTelegramId),
+          thread_id: demoChatThreadId || undefined,
+        }),
+      });
+      setDemoChatThreadId(result.thread_id);
+      setDemoChatMessages((current) => [...current, { role: "assistant", content: result.answer }]);
+    } catch (error) {
+      setDemoChatError(
+        error?.status === 429
+          ? error.message
+          : "Не вдалося отримати відповідь AI INSIGHT. Спробуйте ще раз трохи пізніше.",
+      );
+    } finally {
+      setDemoChatLoading(false);
+    }
+  }
+
+  function openDemoInsight() {
+    if (requireDemoAccess()) {
+      setDemoChatOpen((open) => !open);
+    }
+  }
+
+  function openDemoPractices() {
+    if (requireDemoAccess()) {
+      setDemoPracticesOpen(true);
+    }
+  }
+
+  async function openDemoPractice(practice) {
+    setDemoPracticeOpeningId(practice.id);
+    setDemoError(null);
+    try {
+      const content = await fetchJson(`/api/demo/practices/${practice.id}/open`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telegram_id: Number(sharedDemoTelegramId) }),
+      });
+      setDemoOpenedPractice(content);
+      setDemoPracticeToOpen(null);
+      await loadDemoDashboard();
+    } catch (error) {
+      setDemoError(error.message || "Не вдалося відкрити практику.");
+    } finally {
+      setDemoPracticeOpeningId(null);
+    }
+  }
+
+  function requireDemoAccess() {
+    if (demoAccess) {
+      return true;
+    }
+    setDemoError("Щоб вносити зміни, підтвердьте профіль через Telegram-бота Intima.");
+    return false;
+  }
+
+  async function handleDemoTransaction(event) {
+    event.preventDefault();
+    if (!requireDemoAccess()) {
+      return;
+    }
+    const amount = Number(demoForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0 || !demoForm.category.trim()) {
+      setDemoError("Вкажіть додатну кількість кредитів і категорію.");
+      return;
+    }
+    setDemoLoading(true);
+    try {
+      await fetchJson("/api/demo/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...demoForm, amount, telegram_id: Number(sharedDemoTelegramId) }),
+      });
+      await loadDemoDashboard();
+      setDemoForm(emptyTransaction());
+      setDemoFormOpen(false);
+      setDemoError(null);
+    } catch (error) {
+      setDemoError(error.message || "Не вдалося зберегти операцію.");
+    } finally {
+      setDemoLoading(false);
+    }
+  }
+
+  async function deleteDemoTransaction(transactionId) {
+    if (!window.confirm("Видалити операцію?")) {
+      return;
+    }
+    setDemoLoading(true);
+    try {
+      await fetchJson(`/api/demo/transactions/${transactionId}?telegram_id=${sharedDemoTelegramId}`, { method: "DELETE" });
+      await loadDemoDashboard();
+      setDemoError(null);
+    } catch (error) {
+      setDemoError(error.message || "Не вдалося видалити операцію.");
+    } finally {
+      setDemoLoading(false);
+    }
+  }
+
+  function leavePublicProfile() {
+    setDemoAccess(false);
+    setDemoIdInput("");
+    setDemoTransactions(publicDemoTransactions);
+    setDemoPracticeLibrary(null);
+    setDemoFormOpen(false);
+    setDemoChatOpen(false);
+    setDemoChatMessages([]);
+    setDemoChatThreadId("");
+    setDemoPracticesOpen(false);
+    setDemoPracticeToOpen(null);
+    setDemoOpenedPractice(null);
+    setDemoError(null);
+    setDemoChatError(null);
+  }
+
+  async function refreshPublicDashboard() {
+    if (!demoAccess) {
+      window.location.reload();
+      return;
+    }
+    setDemoLoading(true);
+    setDemoError(null);
+    try {
+      await loadDemoDashboard();
+    } catch (error) {
+      setDemoError(error.message || "Не вдалося оновити дані.");
+    } finally {
+      setDemoLoading(false);
+    }
+  }
+
+  return (
+    <main className="dashboard public-demo-dashboard">
+      <header className="hero">
+        <div className="brand-block">
+          <p className="eyebrow">INTIMA · ОСОБИСТИЙ ПРОСТІР</p>
+          <h1>Сервіс Intima <span className="title-heart">♥</span></h1>
+          <p className="subtitle">Кредити, взаємодії та корисні сервіси для самопізнання та близькості у парі.</p>
+        </div>
+        <div className="admin-controls">
+          <div className="system-actions">
+            <button className="logout-button" onClick={leavePublicProfile} type="button">Вийти</button>
+            <button className="refresh-button" disabled={demoLoading} onClick={refreshPublicDashboard} type="button">
+              {demoLoading ? "Оновлюємо…" : "Оновити"}
+            </button>
+          </div>
+          <form className="identity-picker" onSubmit={handleDemoAccess}>
+            <label>
+              <span>Telegram ID</span>
+              <input inputMode="numeric" onChange={(event) => setDemoIdInput(event.target.value)} placeholder="Ваш Telegram ID" value={demoIdInput} />
+            </label>
+            <button className="identity-submit" disabled={demoLoading} type="submit">{demoLoading ? "Завантажуємо…" : "Показати"}</button>
+          </form>
+          <a className="telegram-entry-button" href="https://t.me/IntimaCoupleBot?start=web">✈ Telegram</a>
+        </div>
+        <nav className="functional-actions" aria-label="Можливості Intima">
+          <button className="practices-trigger" onClick={openDemoPractices} type="button">♡ Практики для двох</button>
+          <button className="practices-trigger self-practices-trigger" onClick={openDemoPractices} type="button">✦ Самопізнання</button>
+          <button className="add-operation-button" onClick={() => requireDemoAccess() && setDemoFormOpen((open) => !open)} type="button">＋ Додати операцію</button>
+          <button className="insight-trigger" onClick={openDemoInsight} type="button">✨ AI INSIGHT</button>
+        </nav>
+      </header>
+
+      {demoAccess && <section className="selected-profile demo-profile" aria-label="Профіль Intima">
+        <p>Показано дані: <strong>Intima</strong> · Telegram ID {demoIdInput.trim()}</p>
+      </section>}
+      {demoError && <p className="identity-error" role="alert">{demoError}</p>}
+
+      <section className="summary-grid" aria-label="Приклад підсумку кредитів">
+        {[
+          { label: "Нараховано", value: totalIncome, icon: "✨" },
+          { label: "Списано", value: totalExpense, icon: "🌿" },
+          { label: "Баланс кредитів", value: totalIncome - totalExpense, icon: "💜" },
+        ].map((card) => (
+          <article className="summary-card" key={card.label}>
+            <span aria-hidden="true">{card.icon}</span>
+            <p>{card.label}</p>
+            <strong>{formatCredits(card.value)}</strong>
+          </article>
+        ))}
+      </section>
+
+      <section className={`ai-chat-section ${demoChatOpen ? "open" : ""}`} aria-labelledby="demo-insight-heading">
+        <div className="section-heading">
+          <div>
+        <p className="eyebrow">AI INSIGHT · ✨</p>
+        <h2 id="demo-insight-heading">Помічник Intima</h2>
+            <p className="chat-intro">Запитайте про баланс, останні списання або категорії кредитів.</p>
+          </div>
+          <button className="chat-panel-toggle" onClick={openDemoInsight} type="button">
+            {demoChatOpen ? "Згорнути" : "Відкрити чат"}
+          </button>
+        </div>
+        {demoAccess && demoChatOpen && <>
+          <div className="chat-history" aria-live="polite">
+            {demoChatMessages.length === 0 ? (
+              <div className="chat-welcome"><span aria-hidden="true">✨</span><p>Я можу показати баланс, найбільші списання або структуру витрат.</p></div>
+            ) : demoChatMessages.map((message, index) => (
+              <article className={`chat-message ${message.role}`} key={`${message.role}-${index}`}>
+                <span>{message.role === "user" ? "Ви" : "AI INSIGHT"}</span><p>{message.content}</p>
+              </article>
+            ))}
+            {demoChatLoading && <article className="chat-message assistant chat-loading" role="status"><span>AI INSIGHT</span><p>Читаю дані кредитів…</p></article>}
+          </div>
+          {demoChatError && <p className="chat-error" role="alert">{demoChatError}</p>}
+          <form className="chat-form" onSubmit={handleDemoInsightChat}>
+            <label className="visually-hidden" htmlFor="demo-insight-input">Запит до AI INSIGHT</label>
+            <textarea disabled={demoChatLoading} id="demo-insight-input" onChange={(event) => setDemoChatInput(event.target.value)} placeholder="Наприклад: Який баланс і найбільші списання?" rows="2" value={demoChatInput} />
+            <button className="chat-send-button" disabled={demoChatLoading || !demoChatInput.trim()} type="submit">{demoChatLoading ? "Аналізуємо…" : "Запитати"}</button>
+          </form>
+        </>}
+      </section>
+
+      <section className="transaction-form-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">НОВА ОПЕРАЦІЯ · ✦</p>
+            <h2>Додати кредити Intima</h2>
+          </div>
+          <button aria-expanded={demoFormOpen} className="form-toggle" onClick={() => requireDemoAccess() && setDemoFormOpen((open) => !open)} type="button">
+            {demoFormOpen ? "Згорнути форму" : "＋ Додати операцію"}
+          </button>
+        </div>
+        {!demoFormOpen && <p className="form-hint">Нараховуйте бонуси або списуйте кредити за AI-сесії, вправи й персональні плани. 🫶</p>}
+        {demoFormOpen && <form className="transaction-form" onSubmit={handleDemoTransaction}>
+          <label>Тип<select name="type" onChange={(event) => setDemoForm((current) => ({ ...current, type: event.target.value }))} value={demoForm.type}><option value="income">Нарахування</option><option value="expense">Списання</option></select></label>
+          <label>Кредити<input min="0.01" name="amount" onChange={(event) => setDemoForm((current) => ({ ...current, amount: event.target.value }))} required step="0.01" type="number" value={demoForm.amount} /></label>
+          <label>Категорія<input name="category" onChange={(event) => setDemoForm((current) => ({ ...current, category: event.target.value }))} required value={demoForm.category} /></label>
+          <label>Дата<input name="date" onChange={(event) => setDemoForm((current) => ({ ...current, date: event.target.value }))} required type="date" value={demoForm.date} /></label>
+          <label className="form-description">Опис<textarea name="description" onChange={(event) => setDemoForm((current) => ({ ...current, description: event.target.value }))} rows="2" value={demoForm.description} /></label>
+          <button className="submit-button" disabled={demoLoading} type="submit">{demoLoading ? "Зберігаємо…" : "Додати операцію"}</button>
+        </form>}
+      </section>
+
+      <div className="overview-grid">
+        <section className="activity-section">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">LEDGER</p>
+              <h2>Історія кредитів</h2>
+            </div>
+          </div>
+          <div className="table-wrapper">
+            <table>
+              <thead><tr><th>Дата</th><th>Тип</th><th>Кредити</th><th>Категорія</th><th>Опис</th><th>Дії</th></tr></thead>
+              <tbody>
+                {visibleDemoTransactions.map((transaction) => (
+                  <tr key={transaction.id}>
+                    <td>{formatDate(transaction.date)}</td>
+                    <td><span className={`type-badge ${transaction.type}`}>{typeLabels[transaction.type]}</span></td>
+                    <td>{formatCredits(transaction.amount)}</td>
+                    <td>{transaction.category}</td>
+                    <td>{transaction.description}</td>
+                    <td>{demoAccess ? <button className="delete-button" disabled={demoLoading} onClick={() => deleteDemoTransaction(transaction.id)} type="button">Видалити</button> : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="expense-structure" aria-label="Структура списань">
+          <div className="section-heading"><div><p className="eyebrow">СТРУКТУРА СПИСАНЬ</p><h2>Кредити за категоріями</h2></div></div>
+          <ul className="expense-list">
+            {demoExpenses.map((item) => (
+              <li key={item.category}>
+                <div className="expense-label"><span>{item.category}</span><strong>{formatCredits(item.amount)} кредити · {item.share}%</strong></div>
+                <div className="expense-bar"><span style={{ width: `${item.share}%` }} /></div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+
+      <div className="filter-group demo-filter-group" aria-label="Фільтр операцій">
+        {filters.map((item) => <button className={demoFilter === item.value ? "filter-button active" : "filter-button"} key={item.value} onClick={() => setDemoFilter(item.value)} type="button">{item.label}</button>)}
+      </div>
+
+      {demoPracticesOpen && (
+        <div className="practices-overlay" onMouseDown={() => setDemoPracticesOpen(false)} role="presentation">
+          <section aria-labelledby="demo-practices-heading" aria-modal="true" className="practices-modal public-practices-modal" onMouseDown={(event) => event.stopPropagation()} role="dialog">
+            <button aria-label="Закрити практики" className="modal-close-button" onClick={() => setDemoPracticesOpen(false)} type="button">×</button>
+            {demoOpenedPractice ? (
+              <>
+                <button className="back-to-practices" onClick={() => setDemoOpenedPractice(null)} type="button">← До добірки</button>
+                <div className="practice-detail-heading"><span aria-hidden="true">{demoOpenedPractice.icon}</span><div><p className="eyebrow">{demoOpenedPractice.time} · ВІДКРИТО</p><h2 id="demo-practices-heading">{demoOpenedPractice.title}</h2></div></div>
+                <p className="practices-intro">{demoOpenedPractice.intro}</p>
+                <ol className="practice-steps">{demoOpenedPractice.steps.map((step) => <li key={step}>{step}</li>)}</ol>
+                <p className="practice-note">💜 Обирайте лише те, що комфортно вам. Можна зупинитися, змінити темп або відкласти вправу в будь-який момент.</p>
+                {demoOpenedPractice.warning && <p className="practice-warning">⚠️ {demoOpenedPractice.warning}</p>}
+              </>
+            ) : demoPracticeToOpen ? (
+              <>
+                <button className="back-to-practices" disabled={Boolean(demoPracticeOpeningId)} onClick={() => setDemoPracticeToOpen(null)} type="button">← До добірки</button>
+                <span className="purchase-practice-icon" aria-hidden="true">{demoPracticeToOpen.icon}</span>
+                <p className="eyebrow">ПІДТВЕРДЖЕННЯ ВІДКРИТТЯ</p><h2 id="demo-practices-heading">Відкрити «{demoPracticeToOpen.label}»?</h2>
+                <p className="practices-intro">З балансу буде списано 1 кредит Intima. Після цього практика залишиться відкритою для вашого профілю.</p>
+                {demoPracticeToOpen.collection === "self" && <p className="practice-warning">⚠️ {selfDiscoveryWarning}</p>}
+                <div className="practice-purchase-actions"><button className="purchase-confirm-button" disabled={Boolean(demoPracticeOpeningId)} onClick={() => openDemoPractice(demoPracticeToOpen)} type="button">{demoPracticeOpeningId ? "Відкриваємо…" : "Відкрити за 1 кредит"}</button><button className="purchase-cancel-button" disabled={Boolean(demoPracticeOpeningId)} onClick={() => setDemoPracticeToOpen(null)} type="button">Не зараз</button></div>
+              </>
+            ) : (
+              <>
+                <p className="eyebrow">INTIMA · ПРАКТИКИ</p><h2 id="demo-practices-heading">Оберіть практику</h2>
+                <p className="practices-intro">Ваш баланс: {formatCredits(demoPracticeLibrary?.balance ?? 0)} кредитів. Нова практика коштує 1 кредит.</p>
+                {[{ id: "couple", label: "Для вас двох" }, { id: "self", label: "Для самопізнання" }].map((group) => <section className="public-practice-group" key={group.id}><p className="eyebrow">{group.label}</p><div className="practice-choice-grid">{demoPracticeLibrary?.practices.filter((practice) => practice.collection === group.id).map((practice) => <button className="practice-choice" disabled={demoPracticeOpeningId === practice.id} key={practice.id} onClick={() => (practice.unlocked ? openDemoPractice(practice) : setDemoPracticeToOpen(practice))} type="button"><span aria-hidden="true">{practice.icon}</span><strong>{practice.label}</strong><small>{practice.unlocked ? "✓ Уже відкрито" : "1 кредит · "}{practice.time}</small></button>)}</div></section>)}
+              </>
+            )}
+          </section>
+        </div>
+      )}
+    </main>
+  );
+}
+
 export default function App() {
   const [accessPassword, setAccessPassword] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
@@ -771,29 +1184,7 @@ export default function App() {
   }
 
   if (!adminMode) {
-    return (
-      <main className="public-cabinet">
-        <section className="public-cabinet-card">
-          <p className="eyebrow">INTIMA · ПРОСТІР ТУРБОТИ</p>
-          <span className="cabinet-flower" aria-hidden="true">♥</span>
-          <h1>Самопізнання та близькість у власному темпі</h1>
-          <p className="subtitle">
-            Intima допомагає досліджувати контакт із собою та будувати тепліші взаємодії в парі через м’які практики.
-          </p>
-          <div className="cabinet-next-steps">
-            <p><strong>♡ Практики для двох</strong> — вправи для діалогу, дотиків і спільного часу.</p>
-            <p><strong>✦ Самопізнання</strong> — уважні практики для контакту з тілом, потребами й почуттями.</p>
-            <p>Щоб відкрити особистий кабінет і користуватися кредитами, перейдіть сюди кнопкою з Telegram-бота Intima.</p>
-          </div>
-          <a
-            className="telegram-entry-button"
-            href="https://t.me/IntimaCoupleBot?start=web"
-          >
-            ✈ Відкрити Intima у Telegram
-          </a>
-        </section>
-      </main>
-    );
+    return <PublicDemoDashboard />;
   }
 
   if (!accessPassword) {

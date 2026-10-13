@@ -5,7 +5,14 @@ from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
-from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup, WebAppInfo
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+    WebAppInfo,
+)
 from dotenv import load_dotenv
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -34,20 +41,31 @@ MENU_TEXTS = {
 COUPLE_PROFILE_CATEGORY_CODE = "couple_profile"
 COUPLE_PROFILE_CATEGORY_TITLE = "Профіль пари"
 
-def create_menu_keyboard(web_app_url: str | None) -> ReplyKeyboardMarkup:
-    """Add the personal cabinet only when the bot has a configured HTTPS URL."""
-    keyboard = []
-    if web_app_url:
-        keyboard.append([KeyboardButton(text="🌿 Відкрити мій кабінет", web_app=WebAppInfo(url=web_app_url))])
-    keyboard.extend(
-        [
-            [KeyboardButton(text="💬 AI-сексолог"), KeyboardButton(text="👫 Профіль пари")],
-            [KeyboardButton(text="🔥 Сумісність"), KeyboardButton(text="🃏 Картки для розмов")],
-            [KeyboardButton(text="❤️ Intimacy Check-in")],
-            [KeyboardButton(text="🧩 Вправи для пари"), KeyboardButton(text="📊 Insights")],
+def create_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Build the regular bot navigation keyboard."""
+    keyboard = [
+        [KeyboardButton(text="💬 AI-сексолог"), KeyboardButton(text="👫 Профіль пари")],
+        [KeyboardButton(text="🔥 Сумісність"), KeyboardButton(text="🃏 Картки для розмов")],
+        [KeyboardButton(text="❤️ Intimacy Check-in")],
+        [KeyboardButton(text="🧩 Вправи для пари"), KeyboardButton(text="📊 Insights")],
+    ]
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
+def create_cabinet_keyboard(web_app_url: str | None) -> InlineKeyboardMarkup | None:
+    """Launch the cabinet as an Inline Mini App so Telegram supplies initData."""
+    if not web_app_url:
+        return None
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🌿 Відкрити мій кабінет",
+                    web_app=WebAppInfo(url=web_app_url),
+                )
+            ]
         ]
     )
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
 async def main() -> None:
@@ -83,7 +101,8 @@ async def main() -> None:
     web_app_url = os.getenv("WEB_APP_URL", "").strip()
     if web_app_url and not web_app_url.startswith("https://"):
         raise RuntimeError("WEB_APP_URL must use HTTPS for Telegram Mini Apps.")
-    menu_keyboard = create_menu_keyboard(web_app_url or None)
+    menu_keyboard = create_menu_keyboard()
+    cabinet_keyboard = create_cabinet_keyboard(web_app_url or None)
 
     async def register_telegram_user(message: Message) -> User | None:
         """Save identity fields supplied by Telegram when a person starts the bot."""
@@ -119,6 +138,11 @@ async def main() -> None:
             "Обери потрібний розділ у меню нижче або напиши /help.",
             reply_markup=menu_keyboard,
         )
+        if cabinet_keyboard:
+            await message.answer(
+                "Ваш особистий простір із практиками та балансом кредитів:",
+                reply_markup=cabinet_keyboard,
+            )
 
     @dp.message(Command("help"))
     async def cmd_help(message: Message) -> None:
@@ -132,6 +156,11 @@ async def main() -> None:
             "/couple Анна та Максим — зберегти пару",
             reply_markup=menu_keyboard,
         )
+        if cabinet_keyboard:
+            await message.answer(
+                "Відкрити персональний кабінет:",
+                reply_markup=cabinet_keyboard,
+            )
 
     @dp.message(Command("menu"))
     async def cmd_menu(message: Message) -> None:
