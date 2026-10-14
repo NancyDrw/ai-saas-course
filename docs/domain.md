@@ -52,8 +52,17 @@ reflected in Neon.
 
 ## Issue encountered and resolution
 
-After the root A record propagated, Render verified the primary domain and
-issued its certificate.
+At first, Render displayed a message that it could not issue a certificate for
+the custom domain and asked to check DNS records, especially `AAAA` and `CAA`.
+
+The DNS zone was checked in NIC.UA:
+
+- the root `@` record pointed to Render's required address `216.24.57.1`;
+- no conflicting `AAAA` record was configured for the root domain;
+- no restrictive `CAA` record was configured.
+
+After DNS propagation, Render verified the primary domain and issued its
+certificate. The final statuses are **Verified** and **Certificate Issued**.
 
 ## Screenshots for the submission
 
