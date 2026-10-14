@@ -1,4 +1,4 @@
-"""Server-side verification for Telegram Mini App identity data."""
+"""Server-side verification for Telegram Mini App and Login Widget identities."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import hmac
 import json
 import time
 from dataclasses import dataclass
+from typing import Mapping
 from urllib.parse import parse_qsl
 
 
@@ -71,3 +72,55 @@ def validate_webapp_init_data(
         first_name=user.get("first_name") or None,
     )
 
+
+def validate_login_widget_data(
+    payload: Mapping[str, object],
+    bot_token: str,
+    max_age_seconds: int = 3_600,
+    now: int | None = None,
+) -> TelegramIdentity:
+    """Verify the legacy Telegram Login Widget payload before using its ID.
+
+    The Login Widget and Mini Apps deliberately use different HMAC derivations.
+    This function implements the Widget variant documented by Telegram and never
+    trusts an ID until its signature and timestamp have been checked.
+    """
+    if not bot_token:
+        raise TelegramAuthError("Missing Telegram authentication data.")
+
+    received_hash = payload.get("hash")
+    auth_date = payload.get("auth_date")
+    telegram_id = payload.get("id")
+    first_name = payload.get("first_name")
+    if not isinstance(received_hash, str) or not received_hash or auth_date is None or telegram_id is None:
+        raise TelegramAuthError("Telegram Login Widget data is incomplete.")
+
+    try:
+        issued_at = int(auth_date)
+        parsed_telegram_id = int(telegram_id)
+    except (TypeError, ValueError) as error:
+        raise TelegramAuthError("Telegram Login Widget data is invalid.") from error
+    if parsed_telegram_id <= 0 or not isinstance(first_name, str) or not first_name.strip():
+        raise TelegramAuthError("Telegram Login Widget user data is invalid.")
+
+    current_time = int(time.time()) if now is None else now
+    if issued_at > current_time + 60 or current_time - issued_at > max_age_seconds:
+        raise TelegramAuthError("Telegram Login Widget data has expired.")
+
+    fields = {
+        key: str(value)
+        for key, value in payload.items()
+        if key != "hash" and value is not None
+    }
+    data_check_string = "\n".join(f"{key}={value}" for key, value in sorted(fields.items()))
+    secret_key = hashlib.sha256(bot_token.encode()).digest()
+    expected_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_hash, received_hash):
+        raise TelegramAuthError("Telegram Login Widget signature is invalid.")
+
+    username = payload.get("username")
+    return TelegramIdentity(
+        telegram_id=parsed_telegram_id,
+        username=username if isinstance(username, str) and username else None,
+        first_name=first_name.strip(),
+    )

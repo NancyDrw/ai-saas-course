@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const emptyTransaction = () => ({
   type: "income",
@@ -172,6 +172,7 @@ const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const currentView = new URLSearchParams(window.location.search).get("view");
 const publicCabinetMode = currentView === "cabinet";
 const adminMode = currentView === "admin";
+const telegramBotUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || "IntimaCoupleBot";
 
 async function fetchJson(path, options = {}) {
   const response = await fetch(`${apiBaseUrl}${path}`, { credentials: "include", ...options });
@@ -182,6 +183,54 @@ async function fetchJson(path, options = {}) {
     throw error;
   }
   return response.status === 204 ? null : response.json();
+}
+
+function TelegramLoginButton({ onAuthenticated }) {
+  const widgetRef = useRef(null);
+  const [loginError, setLoginError] = useState(null);
+  const [loggingIn, setLoggingIn] = useState(false);
+
+  useEffect(() => {
+    const callbackName = "intimaTelegramLogin";
+    window[callbackName] = async (widgetUser) => {
+      setLoginError(null);
+      setLoggingIn(true);
+      try {
+        const user = await fetchJson("/api/auth/telegram/widget", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(widgetUser),
+        });
+        onAuthenticated(user);
+      } catch (error) {
+        setLoginError(error.message || "Не вдалося увійти через Telegram.");
+      } finally {
+        setLoggingIn(false);
+      }
+    };
+
+    const script = document.createElement("script");
+    script.async = true;
+    script.src = "https://telegram.org/js/telegram-widget.js?22";
+    script.setAttribute("data-telegram-login", telegramBotUsername);
+    script.setAttribute("data-size", "large");
+    script.setAttribute("data-radius", "12");
+    script.setAttribute("data-userpic", "false");
+    script.setAttribute("data-onauth", `${callbackName}(user)`);
+    widgetRef.current?.replaceChildren(script);
+
+    return () => {
+      delete window[callbackName];
+    };
+  }, [onAuthenticated]);
+
+  return (
+    <div className="telegram-login">
+      <div aria-busy={loggingIn} ref={widgetRef} />
+      {loggingIn && <p>Підтверджуємо профіль Telegram…</p>}
+      {loginError && <p className="identity-error" role="alert">{loginError}</p>}
+    </div>
+  );
 }
 
 function formatDate(value) {
@@ -205,7 +254,8 @@ const publicDemoTransactions = [
 ];
 const sharedDemoTelegramId = "9900000001";
 
-function PublicDemoDashboard() {
+function PublicDashboard({ onTelegramAuthenticated, telegramUser = null, onTelegramLogout }) {
+  const telegramProfile = Boolean(telegramUser);
   const [demoIdInput, setDemoIdInput] = useState("");
   const [demoAccess, setDemoAccess] = useState(false);
   const [demoError, setDemoError] = useState(null);
@@ -248,6 +298,16 @@ function PublicDemoDashboard() {
   ));
 
   async function loadDemoDashboard() {
+    if (telegramProfile) {
+      const [, transactions, practices] = await Promise.all([
+        fetchJson("/api/me/summary"),
+        fetchJson("/api/me/transactions"),
+        fetchJson("/api/me/practices"),
+      ]);
+      setDemoTransactions(transactions);
+      setDemoPracticeLibrary(practices);
+      return;
+    }
     const query = `?telegram_id=${sharedDemoTelegramId}`;
     const [, transactions, practices] = await Promise.all([
       fetchJson(`/api/demo/summary${query}`),
@@ -258,8 +318,25 @@ function PublicDemoDashboard() {
     setDemoPracticeLibrary(practices);
   }
 
+  useEffect(() => {
+    if (!telegramProfile) {
+      return;
+    }
+    setDemoLoading(true);
+    loadDemoDashboard()
+      .then(() => {
+        setDemoAccess(true);
+        setDemoError(null);
+      })
+      .catch((error) => setDemoError(error.message || "Не вдалося завантажити ваш профіль."))
+      .finally(() => setDemoLoading(false));
+  }, [telegramProfile]);
+
   async function handleDemoAccess(event) {
     event.preventDefault();
+    if (telegramProfile) {
+      return;
+    }
     if (demoIdInput.trim() !== sharedDemoTelegramId) {
       setDemoAccess(false);
       setDemoError("Щоб вносити зміни у власний профіль, підтвердьте його через Telegram-бота Intima.");
@@ -290,12 +367,12 @@ function PublicDemoDashboard() {
     setDemoChatError(null);
     setDemoChatLoading(true);
     try {
-      const result = await fetchJson("/api/demo/ai/chat", {
+      const result = await fetchJson(telegramProfile ? "/api/me/ai/chat" : "/api/demo/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message,
-          telegram_id: Number(sharedDemoTelegramId),
+          ...(telegramProfile ? {} : { telegram_id: Number(sharedDemoTelegramId) }),
           thread_id: demoChatThreadId || undefined,
         }),
       });
@@ -328,11 +405,14 @@ function PublicDemoDashboard() {
     setDemoPracticeOpeningId(practice.id);
     setDemoError(null);
     try {
-      const content = await fetchJson(`/api/demo/practices/${practice.id}/open`, {
+      const content = await fetchJson(
+        telegramProfile ? `/api/me/practices/${practice.id}/open` : `/api/demo/practices/${practice.id}/open`,
+        {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telegram_id: Number(sharedDemoTelegramId) }),
-      });
+        ...(telegramProfile ? {} : { body: JSON.stringify({ telegram_id: Number(sharedDemoTelegramId) }) }),
+        },
+      );
       setDemoOpenedPractice(content);
       setDemoPracticeToOpen(null);
       await loadDemoDashboard();
@@ -344,7 +424,7 @@ function PublicDemoDashboard() {
   }
 
   function requireDemoAccess() {
-    if (demoAccess) {
+    if (telegramProfile || demoAccess) {
       return true;
     }
     setDemoError("Щоб вносити зміни, підтвердьте профіль через Telegram-бота Intima.");
@@ -396,6 +476,10 @@ function PublicDemoDashboard() {
   }
 
   function leavePublicProfile() {
+    if (telegramProfile) {
+      onTelegramLogout?.();
+      return;
+    }
     setDemoAccess(false);
     setDemoIdInput("");
     setDemoTransactions(publicDemoTransactions);
@@ -442,29 +526,36 @@ function PublicDemoDashboard() {
               {demoLoading ? "Оновлюємо…" : "Оновити"}
             </button>
           </div>
-          <form className="identity-picker" onSubmit={handleDemoAccess}>
-            <label>
-              <span>Telegram ID</span>
-              <input inputMode="numeric" onChange={(event) => setDemoIdInput(event.target.value)} placeholder="Ваш Telegram ID" value={demoIdInput} />
-            </label>
-            <button className="identity-submit" disabled={demoLoading} type="submit">{demoLoading ? "Завантажуємо…" : "Показати"}</button>
-          </form>
-          <a className="telegram-entry-button" href="https://t.me/IntimaCoupleBot?start=web">✈ Telegram</a>
+          {telegramProfile ? (
+            <p className="telegram-profile-label">Профіль підтверджено через Telegram</p>
+          ) : (
+            <>
+              <form className="identity-picker" onSubmit={handleDemoAccess}>
+                <label>
+                  <span>Telegram ID</span>
+                  <input inputMode="numeric" onChange={(event) => setDemoIdInput(event.target.value)} placeholder="Тестовий ID" value={demoIdInput} />
+                </label>
+                <button className="identity-submit" disabled={demoLoading} type="submit">{demoLoading ? "Завантажуємо…" : "Показати"}</button>
+              </form>
+              <TelegramLoginButton onAuthenticated={onTelegramAuthenticated} />
+              <a className="telegram-entry-button" href="https://t.me/IntimaCoupleBot?start=web">✈ Відкрити бота Intima</a>
+            </>
+          )}
         </div>
         <nav className="functional-actions" aria-label="Можливості Intima">
           <button className="practices-trigger" onClick={openDemoPractices} type="button">♡ Практики для двох</button>
           <button className="practices-trigger self-practices-trigger" onClick={openDemoPractices} type="button">✦ Самопізнання</button>
-          <button className="add-operation-button" onClick={() => requireDemoAccess() && setDemoFormOpen((open) => !open)} type="button">＋ Додати операцію</button>
+          {!telegramProfile && <button className="add-operation-button" onClick={() => requireDemoAccess() && setDemoFormOpen((open) => !open)} type="button">＋ Додати операцію</button>}
           <button className="insight-trigger" onClick={openDemoInsight} type="button">✨ AI INSIGHT</button>
         </nav>
       </header>
 
       {demoAccess && <section className="selected-profile demo-profile" aria-label="Профіль Intima">
-        <p>Показано дані: <strong>Intima</strong> · Telegram ID {demoIdInput.trim()}</p>
+        <p>Показано дані: <strong>{telegramProfile ? (telegramUser.first_name || telegramUser.username || "Ваш профіль") : "Intima"}</strong>{telegramProfile ? " · профіль підтверджено через Telegram" : ` · Telegram ID ${demoIdInput.trim()}`}</p>
       </section>}
       {demoError && <p className="identity-error" role="alert">{demoError}</p>}
 
-      <section className="summary-grid" aria-label="Приклад підсумку кредитів">
+      <section className="summary-grid" aria-label="Підсумок кредитів">
         {[
           { label: "Нараховано", value: totalIncome, icon: "✨" },
           { label: "Списано", value: totalExpense, icon: "🌿" },
@@ -509,7 +600,7 @@ function PublicDemoDashboard() {
         </>}
       </section>
 
-      <section className="transaction-form-section">
+      {!telegramProfile && <section className="transaction-form-section">
         <div className="section-heading">
           <div>
             <p className="eyebrow">НОВА ОПЕРАЦІЯ · ✦</p>
@@ -528,7 +619,7 @@ function PublicDemoDashboard() {
           <label className="form-description">Опис<textarea name="description" onChange={(event) => setDemoForm((current) => ({ ...current, description: event.target.value }))} rows="2" value={demoForm.description} /></label>
           <button className="submit-button" disabled={demoLoading} type="submit">{demoLoading ? "Зберігаємо…" : "Додати операцію"}</button>
         </form>}
-      </section>
+      </section>}
 
       <div className="overview-grid">
         <section className="activity-section">
@@ -540,7 +631,7 @@ function PublicDemoDashboard() {
           </div>
           <div className="table-wrapper">
             <table>
-              <thead><tr><th>Дата</th><th>Тип</th><th>Кредити</th><th>Категорія</th><th>Опис</th><th>Дії</th></tr></thead>
+              <thead><tr><th>Дата</th><th>Тип</th><th>Кредити</th><th>Категорія</th><th>Опис</th>{!telegramProfile && <th>Дії</th>}</tr></thead>
               <tbody>
                 {visibleDemoTransactions.map((transaction) => (
                   <tr key={transaction.id}>
@@ -549,7 +640,7 @@ function PublicDemoDashboard() {
                     <td>{formatCredits(transaction.amount)}</td>
                     <td>{transaction.category}</td>
                     <td>{transaction.description}</td>
-                    <td>{demoAccess ? <button className="delete-button" disabled={demoLoading} onClick={() => deleteDemoTransaction(transaction.id)} type="button">Видалити</button> : "—"}</td>
+                    {!telegramProfile && <td>{demoAccess ? <button className="delete-button" disabled={demoLoading} onClick={() => deleteDemoTransaction(transaction.id)} type="button">Видалити</button> : "—"}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -662,6 +753,11 @@ export default function App() {
     setPracticeLibrary(library);
   }, []);
 
+  const handleBrowserTelegramLogin = useCallback((user) => {
+    setTelegramUser(user);
+    setTelegramAuthError(null);
+  }, []);
+
   useEffect(() => {
     if (!publicCabinetMode) {
       return;
@@ -691,6 +787,23 @@ export default function App() {
       .catch(() => setTelegramAuthError("Не вдалося безпечно підтвердити Telegram-профіль. Відкрийте кабінет ще раз через бота."))
       .finally(() => setTelegramAuthLoading(false));
   }, [loadPracticeLibrary]);
+
+  useEffect(() => {
+    if (publicCabinetMode || adminMode) {
+      return undefined;
+    }
+    let cancelled = false;
+    fetchJson("/api/me")
+      .then((user) => {
+        if (!cancelled) {
+          setTelegramUser(user);
+        }
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isPracticesOpen && !isPublicPracticesOpen) {
@@ -1074,7 +1187,7 @@ export default function App() {
     window.Telegram?.WebApp?.close();
   }
 
-  if (publicCabinetMode) {
+  if (publicCabinetMode && !telegramUser) {
     return (
       <main className="public-cabinet">
         <section className="public-cabinet-card">
@@ -1184,7 +1297,13 @@ export default function App() {
   }
 
   if (!adminMode) {
-    return <PublicDemoDashboard />;
+    return (
+      <PublicDashboard
+        onTelegramAuthenticated={handleBrowserTelegramLogin}
+        onTelegramLogout={handleTelegramLogout}
+        telegramUser={telegramUser}
+      />
+    );
   }
 
   if (!accessPassword) {

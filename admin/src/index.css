@@ -134,6 +134,18 @@ button:disabled {
   transform: translateY(-1px);
 }
 
+.telegram-login {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.telegram-login p {
+  color: #6b5074;
+  font-size: 0.82rem;
+  margin: 0;
+}
+
 .demo-action-link {
   border-radius: 999px;
   text-decoration: none;
@@ -262,6 +274,13 @@ button:disabled {
 
 .identity-submit:hover {
   background: #f5eff6;
+}
+
+.telegram-profile-label {
+  color: #6b5074;
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin: 0;
 }
 
 .identity-error {
@@ -1339,6 +1358,10 @@ tbody tr:last-child td {
 
   .identity-picker input {
     width: 100%;
+  }
+
+  .telegram-login {
+    justify-items: start;
   }
 
   .selected-profile {
