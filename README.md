@@ -103,3 +103,13 @@ npm run dev
 ## Debug / Troubleshooting
 
 Типові проблеми запуску бота, Docker Compose та Git описані у [DEBUG.md](DEBUG.md). Перед тим як ділитися логами, переконайтеся, що вони не містять токенів або інших секретів.
+
+## Перевірки перед Pull Request
+
+Перед commit і push запустіть одну команду:
+
+```bash
+python scripts/preflight.py
+```
+
+Вона перевіряє, що `.env` не відстежується Git, збирає React production build, збирає `Dockerfile.render`, компілює Python-код і запускає unit tests у production Docker image. Той самий скрипт автоматично запускає GitHub Actions для кожного Pull Request у `main` і після push у `main`.
