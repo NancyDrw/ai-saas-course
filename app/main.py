@@ -11,7 +11,6 @@ from aiogram.types import (
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
-    WebAppInfo,
 )
 from dotenv import load_dotenv
 from sqlalchemy import select
@@ -52,16 +51,16 @@ def create_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
-def create_cabinet_keyboard(web_app_url: str | None) -> InlineKeyboardMarkup | None:
-    """Launch the cabinet as an Inline Mini App so Telegram supplies initData."""
-    if not web_app_url:
+def create_dashboard_keyboard(dashboard_url: str | None) -> InlineKeyboardMarkup | None:
+    """Link to the domain dashboard, where the Login Widget verifies the user."""
+    if not dashboard_url:
         return None
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🌿 Відкрити мій кабінет",
-                    web_app=WebAppInfo(url=web_app_url),
+                    text="🌿 Відкрити кабінет Intima",
+                    url=dashboard_url,
                 )
             ]
         ]
@@ -98,11 +97,12 @@ async def main() -> None:
 
     bot = Bot(token=token)
     dp = Dispatcher()
-    web_app_url = os.getenv("WEB_APP_URL", "").strip()
-    if web_app_url and not web_app_url.startswith("https://"):
-        raise RuntimeError("WEB_APP_URL must use HTTPS for Telegram Mini Apps.")
+    dashboard_url = os.getenv("DASHBOARD_URL", os.getenv("WEB_APP_URL", "")).strip()
+    dashboard_url = dashboard_url.split("?", 1)[0]
+    if dashboard_url and not dashboard_url.startswith("https://"):
+        raise RuntimeError("DASHBOARD_URL must use HTTPS.")
     menu_keyboard = create_menu_keyboard()
-    cabinet_keyboard = create_cabinet_keyboard(web_app_url or None)
+    dashboard_keyboard = create_dashboard_keyboard(dashboard_url or None)
 
     async def register_telegram_user(message: Message) -> User | None:
         """Save identity fields supplied by Telegram when a person starts the bot."""
@@ -138,14 +138,15 @@ async def main() -> None:
             "Обери потрібний розділ у меню нижче або напиши /help.",
             reply_markup=menu_keyboard,
         )
-        if cabinet_keyboard:
+        if dashboard_keyboard:
             await message.answer(
-                "Ваш особистий простір із практиками та балансом кредитів:",
-                reply_markup=cabinet_keyboard,
+                "Ваш кабінет із практиками, балансом і AI INSIGHT:",
+                reply_markup=dashboard_keyboard,
             )
 
     @dp.message(Command("help"))
     async def cmd_help(message: Message) -> None:
+        await register_telegram_user(message)
         logger.info("Command /help received: user_id=%s", message.from_user.id)
         await message.answer(
             "Intima допомагає дбайливо говорити про близькість у стосунках.\n\n"
@@ -156,14 +157,15 @@ async def main() -> None:
             "/couple Анна та Максим — зберегти пару",
             reply_markup=menu_keyboard,
         )
-        if cabinet_keyboard:
+        if dashboard_keyboard:
             await message.answer(
-                "Відкрити персональний кабінет:",
-                reply_markup=cabinet_keyboard,
+                "Відкрити кабінет Intima:",
+                reply_markup=dashboard_keyboard,
             )
 
     @dp.message(Command("menu"))
     async def cmd_menu(message: Message) -> None:
+        await register_telegram_user(message)
         logger.info("Command /menu received: user_id=%s", message.from_user.id)
         await message.answer("Обери розділ:", reply_markup=menu_keyboard)
 

@@ -51,7 +51,12 @@ from .database import (
     create_database_engine,
 )
 from .practices import PRACTICE_COST, PRACTICES, PRACTICES_BY_ID
-from .telegram_auth import TelegramAuthError, TelegramIdentity, validate_webapp_init_data
+from .telegram_auth import (
+    TelegramAuthError,
+    TelegramIdentity,
+    validate_login_widget_data,
+    validate_webapp_init_data,
+)
 
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -62,6 +67,7 @@ GEMINI_RATE_LIMIT_MESSAGE = "Ліміт запитів Gemini тимчасово
 SESSION_COOKIE_NAME = "intima_session"
 SESSION_TTL_SECONDS = 60 * 60 * 24 * 7
 DEMO_TELEGRAM_ID = 9900000001
+WELCOME_CREDIT_AMOUNT = Decimal("5")
 
 database_url = os.getenv("DATABASE_URL")
 if not database_url or database_url == "your_database_url_here":
@@ -116,6 +122,16 @@ class AdminAccessResponse(BaseModel):
 
 class TelegramWebAppAuthRequest(BaseModel):
     init_data: str = Field(min_length=1, max_length=10_000)
+
+
+class TelegramLoginWidgetAuthRequest(BaseModel):
+    id: int = Field(gt=0)
+    first_name: str = Field(min_length=1, max_length=255)
+    last_name: str | None = Field(default=None, max_length=255)
+    username: str | None = Field(default=None, max_length=255)
+    photo_url: str | None = Field(default=None, max_length=2_000)
+    auth_date: int = Field(gt=0)
+    hash: str = Field(min_length=32, max_length=128)
 
 
 class CurrentUserResponse(BaseModel):
@@ -273,6 +289,19 @@ def encode_session(user_id: int, issued_at: int) -> str:
     return f"{encoded_payload.decode()}.{signature}"
 
 
+def set_user_session(response: Response, user: User) -> None:
+    """Set the same secure session cookie for both Telegram sign-in flows."""
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=encode_session(user.id, int(datetime.now().timestamp())),
+        httponly=True,
+        secure=os.getenv("APP_ENV") == "production",
+        samesite="lax",
+        max_age=SESSION_TTL_SECONDS,
+        path="/",
+    )
+
+
 def decode_session(token: str | None) -> int:
     """Return one authenticated user ID or reject altered/expired cookies."""
     if not token or "." not in token:
@@ -322,6 +351,41 @@ async def get_user_credit_balance(session: AsyncSession, user_id: int) -> Decima
     return balance
 
 
+async def get_credit_summary_for_user(
+    session: AsyncSession, user: User
+) -> SummaryResponse:
+    """Return the ledger totals for exactly one resolved user."""
+    result = await session.execute(
+        select(CreditTransaction.transaction_type, CreditTransaction.amount).where(
+            CreditTransaction.user_id == user.id
+        )
+    )
+    total_income = Decimal("0")
+    total_expense = Decimal("0")
+    for transaction_type, amount in result.all():
+        if transaction_type == "income":
+            total_income += amount
+        else:
+            total_expense += amount
+    return SummaryResponse(
+        total_income=total_income,
+        total_expense=total_expense,
+        balance=total_income - total_expense,
+    )
+
+
+async def list_credit_transactions_for_user(
+    session: AsyncSession, user: User
+) -> list[TransactionResponse]:
+    """Read one user's ledger without accepting an identity from the client."""
+    result = await session.execute(
+        select(CreditTransaction)
+        .where(CreditTransaction.user_id == user.id)
+        .order_by(CreditTransaction.occurred_on.desc(), CreditTransaction.id.desc())
+    )
+    return [serialize_transaction(transaction) for transaction in result.scalars()]
+
+
 def serialize_practice_preview(practice: dict[str, object], unlocked: bool) -> PracticePreviewResponse:
     return PracticePreviewResponse(
         id=str(practice["id"]),
@@ -369,7 +433,7 @@ async def verify_admin_access(_: None = Depends(require_admin)) -> AdminAccessRe
 
 
 async def upsert_telegram_user(session: AsyncSession, identity: TelegramIdentity) -> User:
-    """Store only Telegram profile fields already verified by Telegram's signature."""
+    """Store a verified Telegram profile and grant its one-time welcome balance."""
     user = await session.scalar(select(User).where(User.telegram_id == identity.telegram_id))
     if user is None:
         user = User(
@@ -378,9 +442,27 @@ async def upsert_telegram_user(session: AsyncSession, identity: TelegramIdentity
             first_name=identity.first_name,
         )
         session.add(user)
+        await session.flush()
     else:
         user.username = identity.username
         user.first_name = identity.first_name
+
+    existing_transaction = await session.scalar(
+        select(CreditTransaction.id)
+        .where(CreditTransaction.user_id == user.id)
+        .limit(1)
+    )
+    if existing_transaction is None:
+        session.add(
+            CreditTransaction(
+                user_id=user.id,
+                transaction_type="income",
+                amount=WELCOME_CREDIT_AMOUNT,
+                category="Вітальний бонус",
+                description="Стартові кредити для знайомства з Intima",
+                occurred_on=date.today(),
+            )
+        )
     await session.commit()
     await session.refresh(user)
     return user
@@ -408,15 +490,46 @@ async def authenticate_telegram_webapp(
         ) from None
 
     user = await upsert_telegram_user(session, identity)
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=encode_session(user.id, int(datetime.now().timestamp())),
-        httponly=True,
-        secure=os.getenv("APP_ENV") == "production",
-        samesite="lax",
-        max_age=SESSION_TTL_SECONDS,
-        path="/",
+    set_user_session(response, user)
+    return CurrentUserResponse(
+        telegram_id=user.telegram_id,
+        first_name=user.first_name,
+        username=user.username,
     )
+
+
+@app.post("/api/auth/telegram/widget", response_model=CurrentUserResponse)
+async def authenticate_telegram_login_widget(
+    payload: TelegramLoginWidgetAuthRequest,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+) -> CurrentUserResponse:
+    """Authenticate a browser Login Widget user already known to the bot."""
+    bot_token = os.getenv("BOT_TOKEN")
+    if not bot_token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Telegram login is temporarily unavailable.",
+        )
+    try:
+        identity = validate_login_widget_data(payload.model_dump(), bot_token)
+    except TelegramAuthError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Дані входу Telegram не пройшли перевірку. Спробуйте ще раз.",
+        ) from None
+
+    registered_user = await session.scalar(
+        select(User).where(User.telegram_id == identity.telegram_id)
+    )
+    if registered_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Спершу надішліть будь-яку команду боту Intima, а потім повторіть вхід.",
+        )
+
+    user = await upsert_telegram_user(session, identity)
+    set_user_session(response, user)
     return CurrentUserResponse(
         telegram_id=user.telegram_id,
         first_name=user.first_name,
@@ -432,6 +545,24 @@ async def get_me(user: User = Depends(get_current_user)) -> CurrentUserResponse:
         first_name=user.first_name,
         username=user.username,
     )
+
+
+@app.get("/api/me/summary", response_model=SummaryResponse)
+async def get_my_summary(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> SummaryResponse:
+    """Return totals only for the Telegram-authenticated profile."""
+    return await get_credit_summary_for_user(session, user)
+
+
+@app.get("/api/me/transactions", response_model=list[TransactionResponse])
+async def list_my_transactions(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[TransactionResponse]:
+    """Return the signed-in user's own credit history."""
+    return await list_credit_transactions_for_user(session, user)
 
 
 async def get_practice_library_for_user(
@@ -581,6 +712,18 @@ def create_insight_chat_interaction(api_key: str, messages: list[ChatMessage]):
     return client, interaction
 
 
+def create_readonly_insight_interaction(api_key: str, messages: list[ChatMessage]):
+    """Create a user-facing interaction that can only read that user's ledger."""
+    client = genai.Client(api_key=api_key)
+    interaction = client.interactions.create(
+        model=GEMINI_MODEL,
+        input=build_insight_chat_input(messages),
+        tools=GEMINI_INSIGHT_TOOLS,
+        store=False,
+    )
+    return client, interaction
+
+
 def write_insight_answer_from_tool_results(
     client, messages: list[ChatMessage], tool_outputs: list[dict[str, object]]
 ):
@@ -646,7 +789,49 @@ async def generate_insight_chat_answer(
     return {"answer": final_interaction.output_text.strip(), "pending_action": pending_action}
 
 
+async def generate_readonly_insight_answer(
+    messages: list[ChatMessage], thread_id: str, user_id: int | None
+) -> dict[str, object]:
+    """Answer a signed-in user's question without offering any write action."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY is not configured.")
+
+    client, interaction = await asyncio.to_thread(
+        create_readonly_insight_interaction, api_key, messages
+    )
+    tool_calls = [
+        step for step in (interaction.steps or []) if getattr(step, "type", None) == "function_call"
+    ]
+    if not tool_calls:
+        if not interaction.output_text:
+            raise ValueError("Gemini returned an empty chat response.")
+        return {"answer": interaction.output_text.strip(), "pending_action": None}
+
+    tool_outputs: list[dict[str, object]] = []
+    for tool_call in tool_calls:
+        arguments = getattr(tool_call, "arguments", None)
+        if not isinstance(arguments, dict):
+            arguments = {}
+        try:
+            result = await execute_insight_tool(session_factory, user_id, tool_call.name, arguments)
+        except (TypeError, ValueError):
+            result = {"error": "Не вдалося безпечно прочитати дані кредитів."}
+        tool_outputs.append({"tool": tool_call.name, "result": result})
+
+    final_interaction = await asyncio.to_thread(
+        write_insight_answer_from_tool_results,
+        client,
+        messages,
+        tool_outputs,
+    )
+    if not final_interaction.output_text:
+        raise ValueError("Gemini returned an empty chat response after tool results.")
+    return {"answer": final_interaction.output_text.strip(), "pending_action": None}
+
+
 insight_chat_graph = create_chat_graph(generate_insight_chat_answer)
+readonly_insight_chat_graph = create_chat_graph(generate_readonly_insight_answer)
 
 
 @app.get("/api/identities/telegram/{telegram_id}", response_model=TelegramIdentityResponse)
@@ -950,6 +1135,52 @@ async def chat_with_demo_ai_insight(
     """Run AI Insight only for the shared demo ledger after its ID is supplied."""
     await get_demo_user(session, payload.telegram_id or 0)
     return await chat_with_ai_insight(payload, session, None)
+
+
+@app.post("/api/me/ai/chat", response_model=AiChatResponse)
+async def chat_with_my_ai_insight(
+    payload: AiChatRequest,
+    user: User = Depends(get_current_user),
+) -> AiChatResponse:
+    """Analyze only the signed-in Telegram user's data with read-only tools."""
+    if not os.getenv("GEMINI_API_KEY"):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GEMINI_API_KEY is not configured on the server.",
+        )
+    thread_id = payload.thread_id or uuid4().hex
+    try:
+        result = await readonly_insight_chat_graph.ainvoke(
+            {
+                "messages": [{"role": "user", "content": payload.message}],
+                "answer": "",
+                "pending_action": None,
+                "thread_id": thread_id,
+                "user_id": user.id,
+            },
+            config={"configurable": {"thread_id": f"telegram-{user.id}-{thread_id}"}},
+        )
+        return AiChatResponse(
+            answer=result["answer"],
+            thread_id=thread_id,
+            pending_action=None,
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI INSIGHT returned an invalid response. Please try again.",
+        ) from None
+    except Exception as error:
+        if is_gemini_rate_limit_error(error):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=GEMINI_RATE_LIMIT_MESSAGE,
+            ) from None
+        logger.error("Telegram user AI INSIGHT failed: %s", type(error).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI INSIGHT is temporarily unavailable. Please try again.",
+        ) from None
 
 
 async def get_pending_action_or_404(
