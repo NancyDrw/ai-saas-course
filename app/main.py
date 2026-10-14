@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
@@ -52,20 +53,31 @@ def create_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
-def create_cabinet_keyboard(web_app_url: str | None) -> InlineKeyboardMarkup | None:
-    """Launch the domain cabinet as a Mini App with signed Telegram initData."""
+def create_cabinet_keyboard(
+    web_app_url: str | None,
+    browser_dashboard_url: str | None,
+) -> InlineKeyboardMarkup | None:
+    """Offer both Mini App access and a shareable browser link to the cabinet."""
     if not web_app_url:
         return None
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                text="🌿 Відкрити кабінет Intima",
+                web_app=WebAppInfo(url=web_app_url),
+            )
+        ]
+    ]
+    if browser_dashboard_url:
+        keyboard.append(
             [
                 InlineKeyboardButton(
-                    text="🌿 Відкрити кабінет Intima",
-                    web_app=WebAppInfo(url=web_app_url),
+                    text="↗️ Відкрити дашборд у браузері",
+                    url=browser_dashboard_url,
                 )
             ]
-        ]
-    )
+        )
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 async def main() -> None:
@@ -101,8 +113,17 @@ async def main() -> None:
     web_app_url = os.getenv("WEB_APP_URL", "").strip()
     if web_app_url and not web_app_url.startswith("https://"):
         raise RuntimeError("WEB_APP_URL must use HTTPS for Telegram Mini Apps.")
+    browser_dashboard_url = None
+    if web_app_url:
+        url_parts = urlsplit(web_app_url)
+        browser_dashboard_url = urlunsplit(
+            (url_parts.scheme, url_parts.netloc, url_parts.path, "", "")
+        )
     menu_keyboard = create_menu_keyboard()
-    cabinet_keyboard = create_cabinet_keyboard(web_app_url or None)
+    cabinet_keyboard = create_cabinet_keyboard(
+        web_app_url or None,
+        browser_dashboard_url,
+    )
 
     async def register_telegram_user(message: Message) -> User | None:
         """Save identity fields supplied by Telegram when a person starts the bot."""
@@ -140,7 +161,10 @@ async def main() -> None:
         )
         if cabinet_keyboard:
             await message.answer(
-                "Ваш кабінет із практиками, балансом і AI INSIGHT:",
+                "Ваш кабінет із практиками, балансом і AI INSIGHT:\n"
+                f"{browser_dashboard_url}\n\n"
+                "Перша кнопка відкриває кабінет у Telegram, друга — посилання "
+                "для браузера або копіювання.",
                 reply_markup=cabinet_keyboard,
             )
 
@@ -159,7 +183,8 @@ async def main() -> None:
         )
         if cabinet_keyboard:
             await message.answer(
-                "Відкрити кабінет Intima:",
+                "Відкрити кабінет Intima:\n"
+                f"{browser_dashboard_url}",
                 reply_markup=cabinet_keyboard,
             )
 
