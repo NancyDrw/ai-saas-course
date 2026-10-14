@@ -54,7 +54,6 @@ from .practices import PRACTICE_COST, PRACTICES, PRACTICES_BY_ID
 from .telegram_auth import (
     TelegramAuthError,
     TelegramIdentity,
-    validate_login_widget_data,
     validate_webapp_init_data,
 )
 
@@ -124,14 +123,8 @@ class TelegramWebAppAuthRequest(BaseModel):
     init_data: str = Field(min_length=1, max_length=10_000)
 
 
-class TelegramLoginWidgetAuthRequest(BaseModel):
-    id: int = Field(gt=0)
-    first_name: str = Field(min_length=1, max_length=255)
-    last_name: str | None = Field(default=None, max_length=255)
-    username: str | None = Field(default=None, max_length=255)
-    photo_url: str | None = Field(default=None, max_length=2_000)
-    auth_date: int = Field(gt=0)
-    hash: str = Field(min_length=32, max_length=128)
+class TelegramManualAccessRequest(BaseModel):
+    telegram_id: int = Field(gt=0)
 
 
 class CurrentUserResponse(BaseModel):
@@ -447,6 +440,14 @@ async def upsert_telegram_user(session: AsyncSession, identity: TelegramIdentity
         user.username = identity.username
         user.first_name = identity.first_name
 
+    await grant_welcome_credit_if_needed(session, user)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
+async def grant_welcome_credit_if_needed(session: AsyncSession, user: User) -> None:
+    """Add the one-time welcome balance to a profile with an empty ledger."""
     existing_transaction = await session.scalar(
         select(CreditTransaction.id)
         .where(CreditTransaction.user_id == user.id)
@@ -463,9 +464,6 @@ async def upsert_telegram_user(session: AsyncSession, identity: TelegramIdentity
                 occurred_on=date.today(),
             )
         )
-    await session.commit()
-    await session.refresh(user)
-    return user
 
 
 @app.post("/api/auth/telegram", response_model=CurrentUserResponse)
@@ -498,37 +496,16 @@ async def authenticate_telegram_webapp(
     )
 
 
-@app.post("/api/auth/telegram/widget", response_model=CurrentUserResponse)
-async def authenticate_telegram_login_widget(
-    payload: TelegramLoginWidgetAuthRequest,
+@app.post("/api/auth/telegram/manual", response_model=CurrentUserResponse)
+async def authenticate_existing_telegram_profile(
+    payload: TelegramManualAccessRequest,
     response: Response,
     session: AsyncSession = Depends(get_session),
 ) -> CurrentUserResponse:
-    """Authenticate a browser Login Widget user already known to the bot."""
-    bot_token = os.getenv("BOT_TOKEN")
-    if not bot_token:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Telegram login is temporarily unavailable.",
-        )
-    try:
-        identity = validate_login_widget_data(payload.model_dump(), bot_token)
-    except TelegramAuthError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Дані входу Telegram не пройшли перевірку. Спробуйте ще раз.",
-        ) from None
-
-    registered_user = await session.scalar(
-        select(User).where(User.telegram_id == identity.telegram_id)
-    )
-    if registered_user is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Спершу надішліть будь-яку команду боту Intima, а потім повторіть вхід.",
-        )
-
-    user = await upsert_telegram_user(session, identity)
+    """Open an existing bot profile selected by its saved Telegram ID."""
+    user = await get_user_by_telegram_id(session, payload.telegram_id)
+    await grant_welcome_credit_if_needed(session, user)
+    await session.commit()
     set_user_session(response, user)
     return CurrentUserResponse(
         telegram_id=user.telegram_id,

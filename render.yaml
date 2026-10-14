@@ -31,5 +31,5 @@ services:
         sync: false
       - key: BOT_TOKEN
         sync: false
-      - key: DASHBOARD_URL
+      - key: WEB_APP_URL
         sync: false

@@ -5,11 +5,7 @@ import hmac
 import unittest
 from urllib.parse import urlencode
 
-from app.telegram_auth import (
-    TelegramAuthError,
-    validate_login_widget_data,
-    validate_webapp_init_data,
-)
+from app.telegram_auth import TelegramAuthError, validate_webapp_init_data
 
 
 def signed_init_data(token: str, *, auth_date: int = 1_000) -> str:
@@ -24,19 +20,6 @@ def signed_init_data(token: str, *, auth_date: int = 1_000) -> str:
     return urlencode(fields)
 
 
-def signed_login_widget_data(token: str, *, auth_date: int = 1_000) -> dict[str, object]:
-    fields: dict[str, object] = {
-        "id": 12345,
-        "first_name": "Олена",
-        "username": "olena",
-        "auth_date": auth_date,
-    }
-    data_check_string = "\n".join(f"{key}={value}" for key, value in sorted(fields.items()))
-    secret_key = hashlib.sha256(token.encode()).digest()
-    fields["hash"] = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-    return fields
-
-
 class TelegramWebAppAuthTests(unittest.TestCase):
     def test_accepts_fresh_signed_identity(self) -> None:
         identity = validate_webapp_init_data(signed_init_data("test-token"), "test-token", now=1_100)
@@ -49,18 +32,6 @@ class TelegramWebAppAuthTests(unittest.TestCase):
         with self.assertRaises(TelegramAuthError):
             validate_webapp_init_data(signed_init_data("test-token"), "test-token", now=5_000)
 
-    def test_accepts_signed_login_widget_identity(self) -> None:
-        identity = validate_login_widget_data(
-            signed_login_widget_data("test-token"), "test-token", now=1_100
-        )
-        self.assertEqual(identity.telegram_id, 12345)
-        self.assertEqual(identity.username, "olena")
-
-    def test_rejects_tampered_login_widget_identity(self) -> None:
-        payload = signed_login_widget_data("test-token")
-        payload["id"] = 99999
-        with self.assertRaises(TelegramAuthError):
-            validate_login_widget_data(payload, "test-token", now=1_100)
 
 
 if __name__ == "__main__":
