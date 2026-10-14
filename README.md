@@ -36,19 +36,19 @@ cp .env.example .env
 
 У `.env` мають бути рядки `BOT_TOKEN=...`, `DATABASE_URL=...` та `ADMIN_PASSWORD=...`. `ADMIN_PASSWORD` потрібен лише для локального доступу до web-адмінки. Секрети не зберігайте в коді, не комітьте `.env` і не додавайте їх до логів.
 
-## Дашборд і вхід через Telegram
+## Особистий кабінет через Telegram
 
-Користувач відкриває дашборд на домені Intima та входить через Telegram Login Widget. Backend перевіряє підписані Telegram дані, знаходить уже зареєстрований у боті профіль і створює захищену HttpOnly-сесію. Telegram ID вручну не використовується для входу.
+Користувач відкриває кабінет кнопкою в боті. Telegram Mini App передає підписані дані (`initData`), а backend створює захищену HttpOnly-сесію для відповідного профілю.
 
-Для кнопки дашборду в боті додайте у локальний `.env` або в Render Environment:
+Для увімкнення кнопки у боті додайте у локальний `.env` або в Render Environment:
 
 ```env
-DASHBOARD_URL=https://your-public-intima-app.example
+WEB_APP_URL=https://your-public-intima-app.example/?view=cabinet
 PUBLIC_WEB_ORIGIN=https://your-public-intima-app.example
 APP_ENV=production
 ```
 
-`DASHBOARD_URL` має використовувати HTTPS. Прив’яжіть цей домен до бота через BotFather → Login Widget. `PUBLIC_WEB_ORIGIN` потрібен, якщо React і FastAPI розгорнуті на різних доменах. Не додавайте `BOT_TOKEN` у React, URL або Git.
+`WEB_APP_URL` має використовувати HTTPS. `PUBLIC_WEB_ORIGIN` потрібен, якщо React і FastAPI розгорнуті на різних доменах. Не додавайте `BOT_TOKEN` у React, URL або Git.
 
 3. Запустіть бота:
 

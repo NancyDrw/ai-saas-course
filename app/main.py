@@ -11,6 +11,7 @@ from aiogram.types import (
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
+    WebAppInfo,
 )
 from dotenv import load_dotenv
 from sqlalchemy import select
@@ -51,16 +52,16 @@ def create_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
-def create_dashboard_keyboard(dashboard_url: str | None) -> InlineKeyboardMarkup | None:
-    """Link to the domain dashboard, where the Login Widget verifies the user."""
-    if not dashboard_url:
+def create_cabinet_keyboard(web_app_url: str | None) -> InlineKeyboardMarkup | None:
+    """Launch the domain cabinet as a Mini App with signed Telegram initData."""
+    if not web_app_url:
         return None
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text="🌿 Відкрити кабінет Intima",
-                    url=dashboard_url,
+                    web_app=WebAppInfo(url=web_app_url),
                 )
             ]
         ]
@@ -97,12 +98,11 @@ async def main() -> None:
 
     bot = Bot(token=token)
     dp = Dispatcher()
-    dashboard_url = os.getenv("DASHBOARD_URL", os.getenv("WEB_APP_URL", "")).strip()
-    dashboard_url = dashboard_url.split("?", 1)[0]
-    if dashboard_url and not dashboard_url.startswith("https://"):
-        raise RuntimeError("DASHBOARD_URL must use HTTPS.")
+    web_app_url = os.getenv("WEB_APP_URL", "").strip()
+    if web_app_url and not web_app_url.startswith("https://"):
+        raise RuntimeError("WEB_APP_URL must use HTTPS for Telegram Mini Apps.")
     menu_keyboard = create_menu_keyboard()
-    dashboard_keyboard = create_dashboard_keyboard(dashboard_url or None)
+    cabinet_keyboard = create_cabinet_keyboard(web_app_url or None)
 
     async def register_telegram_user(message: Message) -> User | None:
         """Save identity fields supplied by Telegram when a person starts the bot."""
@@ -138,10 +138,10 @@ async def main() -> None:
             "Обери потрібний розділ у меню нижче або напиши /help.",
             reply_markup=menu_keyboard,
         )
-        if dashboard_keyboard:
+        if cabinet_keyboard:
             await message.answer(
                 "Ваш кабінет із практиками, балансом і AI INSIGHT:",
-                reply_markup=dashboard_keyboard,
+                reply_markup=cabinet_keyboard,
             )
 
     @dp.message(Command("help"))
@@ -157,10 +157,10 @@ async def main() -> None:
             "/couple Анна та Максим — зберегти пару",
             reply_markup=menu_keyboard,
         )
-        if dashboard_keyboard:
+        if cabinet_keyboard:
             await message.answer(
                 "Відкрити кабінет Intima:",
-                reply_markup=dashboard_keyboard,
+                reply_markup=cabinet_keyboard,
             )
 
     @dp.message(Command("menu"))

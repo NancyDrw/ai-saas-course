@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const emptyTransaction = () => ({
   type: "income",
@@ -172,7 +172,6 @@ const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const currentView = new URLSearchParams(window.location.search).get("view");
 const publicCabinetMode = currentView === "cabinet";
 const adminMode = currentView === "admin";
-const telegramBotUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || "IntimaCoupleBot";
 
 async function fetchJson(path, options = {}) {
   const response = await fetch(`${apiBaseUrl}${path}`, { credentials: "include", ...options });
@@ -183,54 +182,6 @@ async function fetchJson(path, options = {}) {
     throw error;
   }
   return response.status === 204 ? null : response.json();
-}
-
-function TelegramLoginButton({ onAuthenticated }) {
-  const widgetRef = useRef(null);
-  const [loginError, setLoginError] = useState(null);
-  const [loggingIn, setLoggingIn] = useState(false);
-
-  useEffect(() => {
-    const callbackName = "intimaTelegramLogin";
-    window[callbackName] = async (widgetUser) => {
-      setLoginError(null);
-      setLoggingIn(true);
-      try {
-        const user = await fetchJson("/api/auth/telegram/widget", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(widgetUser),
-        });
-        onAuthenticated(user);
-      } catch (error) {
-        setLoginError(error.message || "Не вдалося увійти через Telegram.");
-      } finally {
-        setLoggingIn(false);
-      }
-    };
-
-    const script = document.createElement("script");
-    script.async = true;
-    script.src = "https://telegram.org/js/telegram-widget.js?22";
-    script.setAttribute("data-telegram-login", telegramBotUsername);
-    script.setAttribute("data-size", "large");
-    script.setAttribute("data-radius", "12");
-    script.setAttribute("data-userpic", "false");
-    script.setAttribute("data-onauth", `${callbackName}(user)`);
-    widgetRef.current?.replaceChildren(script);
-
-    return () => {
-      delete window[callbackName];
-    };
-  }, [onAuthenticated]);
-
-  return (
-    <div className="telegram-login">
-      <div aria-busy={loggingIn} ref={widgetRef} />
-      {loggingIn && <p>Підтверджуємо профіль Telegram…</p>}
-      {loginError && <p className="identity-error" role="alert">{loginError}</p>}
-    </div>
-  );
 }
 
 function formatDate(value) {
@@ -254,7 +205,7 @@ const publicDemoTransactions = [
 ];
 const sharedDemoTelegramId = "9900000001";
 
-function PublicDashboard({ onTelegramAuthenticated, telegramUser = null, onTelegramLogout }) {
+function PublicDashboard({ onProfileSelected, telegramUser = null, onTelegramLogout }) {
   const telegramProfile = Boolean(telegramUser);
   const [demoIdInput, setDemoIdInput] = useState("");
   const [demoAccess, setDemoAccess] = useState(false);
@@ -337,15 +288,24 @@ function PublicDashboard({ onTelegramAuthenticated, telegramUser = null, onTeleg
     if (telegramProfile) {
       return;
     }
-    if (demoIdInput.trim() !== sharedDemoTelegramId) {
-      setDemoAccess(false);
-      setDemoError("Щоб вносити зміни у власний профіль, підтвердьте його через Telegram-бота Intima.");
+    const telegramId = Number(demoIdInput.trim());
+    if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+      setDemoError("Введіть коректний Telegram ID.");
       return;
     }
     setDemoLoading(true);
     try {
-      await loadDemoDashboard();
-      setDemoAccess(true);
+      if (demoIdInput.trim() === sharedDemoTelegramId) {
+        await loadDemoDashboard();
+        setDemoAccess(true);
+      } else {
+        const user = await fetchJson("/api/auth/telegram/manual", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ telegram_id: telegramId }),
+        });
+        onProfileSelected(user);
+      }
       setDemoError(null);
     } catch (error) {
       setDemoAccess(false);
@@ -427,7 +387,7 @@ function PublicDashboard({ onTelegramAuthenticated, telegramUser = null, onTeleg
     if (telegramProfile || demoAccess) {
       return true;
     }
-    setDemoError("Щоб вносити зміни, підтвердьте профіль через Telegram-бота Intima.");
+    setDemoError("Введіть Telegram ID, щоб відкрити свій профіль.");
     return false;
   }
 
@@ -533,11 +493,10 @@ function PublicDashboard({ onTelegramAuthenticated, telegramUser = null, onTeleg
               <form className="identity-picker" onSubmit={handleDemoAccess}>
                 <label>
                   <span>Telegram ID</span>
-                  <input inputMode="numeric" onChange={(event) => setDemoIdInput(event.target.value)} placeholder="Тестовий ID" value={demoIdInput} />
+                  <input inputMode="numeric" onChange={(event) => setDemoIdInput(event.target.value)} placeholder="Ваш Telegram ID" value={demoIdInput} />
                 </label>
                 <button className="identity-submit" disabled={demoLoading} type="submit">{demoLoading ? "Завантажуємо…" : "Показати"}</button>
               </form>
-              <TelegramLoginButton onAuthenticated={onTelegramAuthenticated} />
               <a className="telegram-entry-button" href="https://t.me/IntimaCoupleBot?start=web">✈ Відкрити бота Intima</a>
             </>
           )}
@@ -753,7 +712,7 @@ export default function App() {
     setPracticeLibrary(library);
   }, []);
 
-  const handleBrowserTelegramLogin = useCallback((user) => {
+  const handleManualTelegramAccess = useCallback((user) => {
     setTelegramUser(user);
     setTelegramAuthError(null);
   }, []);
@@ -1299,7 +1258,7 @@ export default function App() {
   if (!adminMode) {
     return (
       <PublicDashboard
-        onTelegramAuthenticated={handleBrowserTelegramLogin}
+        onProfileSelected={handleManualTelegramAccess}
         onTelegramLogout={handleTelegramLogout}
         telegramUser={telegramUser}
       />
