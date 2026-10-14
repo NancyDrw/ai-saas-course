@@ -42,14 +42,14 @@ Set these variables for **intima-api**:
 - `GEMINI_API_KEY`
 - `ADMIN_PASSWORD`
 - `APP_ENV=production`
-- `PUBLIC_WEB_ORIGIN` — the public API/cabinet URL, for example `https://intima-api.onrender.com`
+- `PUBLIC_WEB_ORIGIN` — the public API/cabinet URL: `https://intima-space.pp.ua`
 
 Set these variables for **intima-telegram-bot**:
 
 - `DATABASE_URL`
 - `BOT_TOKEN`
 - `APP_ENV=production`
-- `WEB_APP_URL` — the public cabinet URL with `?view=cabinet`, for example `https://intima-api.onrender.com/?view=cabinet`
+- `WEB_APP_URL` — the public cabinet URL with `?view=cabinet`: `https://intima-space.pp.ua/?view=cabinet`
 
 The frontend and API share one origin, so `VITE_API_BASE_URL` is not needed in production. The React code uses relative `/api` paths.
 
