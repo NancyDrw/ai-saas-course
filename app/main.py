@@ -152,11 +152,16 @@ async def main() -> None:
         if user is None:
             await message.answer("Не вдалося визначити ваш Telegram-профіль.")
             return
-        logger.info("Command /start received: user_id=%s", user.id)
+        logger.info(
+            "Command /start received: telegram_id=%s database_user_id=%s",
+            user.telegram_id,
+            user.id,
+        )
         await message.answer(
             "Привіт! 👋\n\n"
             "Я Intima — цифровий помічник для турботи про близькість і стосунки.\n"
-            "Обери потрібний розділ у меню нижче або напиши /help.",
+            "Обери потрібний розділ у меню нижче або напиши /help.\n\n"
+            "Щоб відкрити дашборд у браузері вручну, надішліть /id — бот покаже ваш Telegram ID.",
             reply_markup=menu_keyboard,
         )
         if cabinet_keyboard:
@@ -178,6 +183,7 @@ async def main() -> None:
             "/start — розпочати роботу\n"
             "/help — коротка довідка\n"
             "/menu — показати меню\n"
+            "/id — показати ваш Telegram ID для дашборду\n"
             "/couple Анна та Максим — зберегти пару",
             reply_markup=menu_keyboard,
         )
@@ -187,6 +193,24 @@ async def main() -> None:
                 f"{browser_dashboard_url}",
                 reply_markup=cabinet_keyboard,
             )
+
+    @dp.message(Command("id"))
+    async def cmd_id(message: Message) -> None:
+        """Show the exact Telegram ID accepted by the browser dashboard."""
+        user = await register_telegram_user(message)
+        if user is None:
+            await message.answer("Не вдалося визначити ваш Telegram-профіль.")
+            return
+        logger.info(
+            "Command /id received: telegram_id=%s database_user_id=%s",
+            user.telegram_id,
+            user.id,
+        )
+        await message.answer(
+            "Ваш Telegram ID для входу на дашборд Intima:\n"
+            f"{user.telegram_id}\n\n"
+            "Скопіюйте це число та введіть його на https://intima-space.pp.ua/"
+        )
 
     @dp.message(Command("menu"))
     async def cmd_menu(message: Message) -> None:
